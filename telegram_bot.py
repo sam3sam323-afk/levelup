@@ -46,7 +46,7 @@ threading.Thread(target=run_health_check_server, daemon=True).start()
 # ==========================================
 # 2. إعدادات البوت والبيانات الأساسية
 # ==========================================
-BOT_TOKEN = "8816220262:AAGSg2QqrFBnAKeBdZ39I0FOeI3lIby8z8I"
+BOT_TOKEN = os.environ.get("BOT_TOKEN")
 ADMIN_ID = 6467163023
 
 if not BOT_TOKEN:
