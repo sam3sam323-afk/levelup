@@ -1,6 +1,8 @@
-from datetime import datetime, timedelta
-import logging
 import os
+import threading
+import logging
+from datetime import datetime, timedelta
+from http.server import HTTPServer, BaseHTTPRequestHandler
 
 from telegram import (
     InlineKeyboardButton,
@@ -20,10 +22,31 @@ from telegram.ext import (
     filters,
 )
 
-# وضع التوكن الخاص بالبوت
-BOT_TOKEN = "8816220262:AAGSg2QqrFBnAKeBdZ39I0FOeI3lIby8z8I"
+# ==========================================
+# 1. خادم الـ Health Check (لصالح Render و UptimeRobot)
+# ==========================================
+class HealthCheckHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"OK")
 
-# الـ ID الشخصي الخاص بك لتصلك الحجوزات والرسائل عليه مباشرة
+    # إخفاء سجلات الـ HTTP اليومية لتنظيف اللوج
+    def log_message(self, format, *args):
+        return
+
+def run_health_check_server():
+    port = int(os.environ.get("PORT", 10000))
+    server = HTTPServer(('0.0.0.0', port), HealthCheckHandler)
+    server.serve_forever()
+
+# تشغيل خادم الويب في الخلفية
+threading.Thread(target=run_health_check_server, daemon=True).start()
+
+# ==========================================
+# 2. إعدادات البوت والبيانات الأساسية
+# ==========================================
+BOT_TOKEN = "8816220262:AAGSg2QqrFBnAKeBdZ39I0FOeI3lIby8z8I"
 ADMIN_ID = 6467163023
 
 if not BOT_TOKEN:
@@ -189,7 +212,6 @@ async def booking_finish_handler(update: Update, context: ContextTypes.DEFAULT_T
     user = query.from_user
     user_info = f"@{user.username}" if user.username else f"الاسم: {user.first_name}"
     
-    # تأكيد للزبون وإعادة إظهار القائمة الثابتة
     await query.edit_message_text(
         f"✅ **تم تسجيل طلب الحجز بنجاح!**\n\n"
         f"📅 التاريخ: {day_text}\n"
@@ -203,7 +225,6 @@ async def booking_finish_handler(update: Update, context: ContextTypes.DEFAULT_T
         reply_markup=main_reply_keyboard()
     )
     
-    # إشعار لحسابك الشخصي
     admin_msg = (
         f"🚨 **طلب حجز جهاز جديد في ليفل آب أرينا!**\n\n"
         f"👤 الزبون: {user_info} (ID: `{user.id}`)\n"
