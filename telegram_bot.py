@@ -267,28 +267,46 @@ async def receive_contact_message(update: Update, context: ContextTypes.DEFAULT_
     return ConversationHandler.END
 
 async def admin_direct_reply(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """يتيح للأدمن الرد مباشرة على أي زبون عبر عمل Reply لرسالته."""
+    """يتيح للأدمن الرد مباشرة على أي زبون عبر عمل Reply لرسالته مع تشخيص الأخطاء."""
     if update.effective_user.id != ADMIN_ID:
         return
 
-    reply_to = update.message.reply_to_message
-    if not reply_to or not reply_to.text:
+    if not update.message or not update.message.reply_to_message:
         return
 
-    # استخراج الـ ID من الرسالة الأصلية التي وصلت للأدمن
-    match = re.search(r"ID: `(\d+)`", reply_to.text)
-    if match:
+    reply_to = update.message.reply_to_message
+    text_to_search = reply_to.text or reply_to.caption
+    
+    if not text_to_search:
+        await update.message.reply_text("❌ الرسالة التي رددت عليها لا تحتوي على نص.")
+        return
+
+    # بحث مرن عن الـ ID بغض النظر عن الرموز أو التنسيق
+    match = re.search(r"(?:ID|id)[:\s]*`?(\d+)`?", text_to_search)
+    
+    if not match:
+        all_numbers = re.findall(r"\d{5,}", text_to_search)
+        if all_numbers:
+            customer_id = int(all_numbers[-1])
+        else:
+            await update.message.reply_text("❌ لم يتم العثور على رقم الـ ID في هذه الرسالة. تأكد أنك ترد على رسالة إشعار قادمة من البوت.")
+            return
+    else:
         customer_id = int(match.group(1))
-        admin_text = update.message.text
-        try:
-            await context.bot.send_message(
-                chat_id=customer_id,
-                text=f"💬 **رد إدارة ليفل آب أرينا:**\n\n{admin_text}"
-            )
-            await update.message.reply_text("✅ تم إرسال الرد إلى الزبون بنجاح.")
-        except Exception as e:
-            logger.error(f"فشل إرسال الرد للزبون: {e}")
-            await update.message.reply_text(f"❌ لم يتم إرسال الرد. الخطأ: {e}")
+
+    admin_text = update.message.text
+    if not admin_text:
+        return
+
+    try:
+        await context.bot.send_message(
+            chat_id=customer_id,
+            text=f"💬 **رد إدارة ليفل آب أرينا:**\n\n{admin_text}"
+        )
+        await update.message.reply_text("✅ تم إرسال الرد إلى الزبون بنجاح.")
+    except Exception as e:
+        logger.error(f"فشل إرسال الرد للزبون: {e}")
+        await update.message.reply_text(f"❌ لم يتم إرسال الرد. الخطأ: {e}")
 
 # --- معالجة أزرار القائمة الثابتة ---
 async def handle_reply_keyboard(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
