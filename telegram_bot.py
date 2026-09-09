@@ -268,10 +268,13 @@ async def receive_contact_message(update: Update, context: ContextTypes.DEFAULT_
 
 async def admin_direct_reply(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """يتيح للأدمن الرد مباشرة على أي زبون عبر عمل Reply لرسالته مع تشخيص الأخطاء."""
+    logger.info("تم تفعيل دالة الرد المباشر للأدمن بنجاح!")
+    
     if update.effective_user.id != ADMIN_ID:
         return
 
     if not update.message or not update.message.reply_to_message:
+        await update.message.reply_text("❌ يجب عمل Reply (رد) على رسالة الإشعار الخاصة بالزبون.")
         return
 
     reply_to = update.message.reply_to_message
@@ -281,7 +284,7 @@ async def admin_direct_reply(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await update.message.reply_text("❌ الرسالة التي رددت عليها لا تحتوي على نص.")
         return
 
-    # بحث مرن عن الـ ID بغض النظر عن الرموز أو التنسيق
+    # بحث مرن عن الـ ID
     match = re.search(r"(?:ID|id)[:\s]*`?(\d+)`?", text_to_search)
     
     if not match:
