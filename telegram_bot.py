@@ -1,6 +1,7 @@
 import os
 import threading
 import logging
+import re
 from datetime import datetime, timedelta
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
@@ -31,7 +32,6 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(b"OK")
 
-    # إخفاء سجلات الـ HTTP اليومية لتنظيف اللوج
     def log_message(self, format, *args):
         return
 
@@ -40,7 +40,6 @@ def run_health_check_server():
     server = HTTPServer(('0.0.0.0', port), HealthCheckHandler)
     server.serve_forever()
 
-# تشغيل خادم الويب في الخلفية
 threading.Thread(target=run_health_check_server, daemon=True).start()
 
 # ==========================================
@@ -58,7 +57,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# حالات المحادثة للحجز والتواصل
 CHOOSING_DAY, CHOOSING_HOUR, WAITING_FOR_CONTACT = range(3)
 
 WELCOME_TEXT = (
@@ -78,9 +76,7 @@ DAYS_AR = {
     6: "الأحد",
 }
 
-
 def main_reply_keyboard() -> ReplyKeyboardMarkup:
-    """القائمة الثابتة أسفل الشاشة بجانب خانة الكتابة."""
     keyboard = [
         [KeyboardButton("🎮 حجز جهاز"), KeyboardButton("💰 الأسعار")],
         [KeyboardButton("🕒 أوقات الدوام"), KeyboardButton("📂 البرامج المتوفرة")],
@@ -88,9 +84,7 @@ def main_reply_keyboard() -> ReplyKeyboardMarkup:
     ]
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
-
 def software_categories_keyboard() -> InlineKeyboardMarkup:
-    """قائمة أقسام البرامج داخل الرسالة."""
     keyboard = [
         [InlineKeyboardButton("1️⃣ المكتبة المختصرة والتعريفات", callback_data="soft_1")],
         [InlineKeyboardButton("2️⃣ حزم التشغيل وأدوات الضغط", callback_data="soft_2")],
@@ -101,15 +95,12 @@ def software_categories_keyboard() -> InlineKeyboardMarkup:
     ]
     return InlineKeyboardMarkup(keyboard)
 
-
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """إرسال رسالة الترحيب عند /start مع إظهار القائمة الثابتة."""
     if update.message:
         await update.message.reply_text(
             WELCOME_TEXT, reply_markup=main_reply_keyboard()
         )
     return ConversationHandler.END
-
 
 # --- نظام الحجز التفاعلي ---
 async def booking_day_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -141,7 +132,6 @@ async def booking_day_start(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         await query.edit_message_text(text, reply_markup=markup, parse_mode="Markdown")
         
     return CHOOSING_HOUR
-
 
 async def booking_hour_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
@@ -188,7 +178,6 @@ async def booking_hour_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         parse_mode="Markdown"
     )
     return CHOOSING_DAY
-
 
 async def booking_finish_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
@@ -238,8 +227,7 @@ async def booking_finish_handler(update: Update, context: ContextTypes.DEFAULT_T
 
     return ConversationHandler.END
 
-
-# --- نظام التواصل مع الإدارة ---
+# --- نظام التواصل مع الإدارة والرد عليها ---
 async def contact_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     text = (
         "💬 **التواصل مع الإدارة**\n\n"
@@ -253,7 +241,6 @@ async def contact_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await query.edit_message_text(text, parse_mode="Markdown")
         
     return WAITING_FOR_CONTACT
-
 
 async def receive_contact_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user = update.message.from_user
@@ -279,6 +266,29 @@ async def receive_contact_message(update: Update, context: ContextTypes.DEFAULT_
 
     return ConversationHandler.END
 
+async def admin_direct_reply(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """يتيح للأدمن الرد مباشرة على أي زبون عبر عمل Reply لرسالته."""
+    if update.effective_user.id != ADMIN_ID:
+        return
+
+    reply_to = update.message.reply_to_message
+    if not reply_to or not reply_to.text:
+        return
+
+    # استخراج الـ ID من الرسالة الأصلية التي وصلت للأدمن
+    match = re.search(r"ID: `(\d+)`", reply_to.text)
+    if match:
+        customer_id = int(match.group(1))
+        admin_text = update.message.text
+        try:
+            await context.bot.send_message(
+                chat_id=customer_id,
+                text=f"💬 **رد إدارة ليفل آب أرينا:**\n\n{admin_text}"
+            )
+            await update.message.reply_text("✅ تم إرسال الرد إلى الزبون بنجاح.")
+        except Exception as e:
+            logger.error(f"فشل إرسال الرد للزبون: {e}")
+            await update.message.reply_text(f"❌ لم يتم إرسال الرد. الخطأ: {e}")
 
 # --- معالجة أزرار القائمة الثابتة ---
 async def handle_reply_keyboard(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -318,7 +328,6 @@ async def handle_reply_keyboard(update: Update, context: ContextTypes.DEFAULT_TY
         return await contact_prompt(update, context)
         
     return ConversationHandler.END
-
 
 # --- معالجة الأزرار الداخلية لأقسام البرامج ---
 async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -437,10 +446,8 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             reply_markup=main_reply_keyboard()
         )
 
-
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
     logger.error("حدث خطأ أثناء معالجة التحديث: %s", context.error)
-
 
 def run() -> None:
     application = Application.builder().token(BOT_TOKEN).build()
@@ -479,13 +486,16 @@ def run() -> None:
     application.add_handler(CommandHandler("start", start))
     application.add_handler(booking_conv)
     application.add_handler(contact_conv)
+    
+    # معالجة رد الأدمن المباشر عبر ميزة Reply
+    application.add_handler(MessageHandler(filters.Chat(ADMIN_ID) & filters.TEXT & ~filters.COMMAND & filters.REPLY, admin_direct_reply))
+    
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_reply_keyboard))
     application.add_handler(CallbackQueryHandler(button_click))
     application.add_error_handler(error_handler)
 
     logger.info("Telegram bot is running with Reply Keyboard menu")
     application.run_polling(allowed_updates=Update.ALL_TYPES)
-
 
 if __name__ == "__main__":
     run()
