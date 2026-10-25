@@ -16,7 +16,10 @@
     "db:push": "drizzle-kit generate && drizzle-kit migrate",
     "android": "expo start --android",
     "ios": "expo start --ios",
-    "qr": "node scripts/generate_qr.mjs"
+    "qr": "node scripts/generate_qr.mjs",
+    "relay": "tsx relay/server.ts",
+    "export:web": "expo export --platform web --output-dir web-dist",
+    "desktop": "pnpm export:web && pnpm relay"
   },
   "dependencies": {
     "@expo/metro-runtime": "~57.0.16",
@@ -35,12 +38,14 @@
     "expo-asset": "~57.0.18",
     "expo-audio": "~57.0.5",
     "expo-build-properties": "~57.0.21",
+    "expo-camera": "~57.0.6",
     "expo-constants": "~57.0.19",
     "expo-font": "~57.0.4",
     "expo-haptics": "~57.0.3",
     "expo-image": "~57.0.5",
     "expo-keep-awake": "~57.0.2",
     "expo-linking": "~57.0.10",
+    "expo-localization": "~57.0.2",
     "expo-notifications": "~57.0.20",
     "expo-router": "~57.0.22",
     "expo-secure-store": "~57.0.4",

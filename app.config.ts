@@ -30,9 +30,8 @@ const env = {
   // App branding - update these values directly (do not use env vars)
   appName: "LEVEL UP ARENA NEXUS",
   appSlug: "levelup",
-  // S3 URL of the app logo - set this to the URL returned by generate_image when creating custom logo
-  // Leave empty to use the default icon from assets/images/icon.png
-  logoUrl: "",
+  // Durable HTTPS URL for project branding metadata; native launcher artwork remains in assets/images.
+  logoUrl: "https://files.manuscdn.com/user_upload_by_module/session_file/310519664043431435/llxfjoHXqutTWDyV.png",
   scheme: schemeFromBundleId,
   iosBundleId: bundleId,
   androidPackage: bundleId,
@@ -72,12 +71,13 @@ const config: ExpoConfig = {
     supportsTablet: true,
     bundleIdentifier: env.iosBundleId,
     "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false
-      }
+      "ITSAppUsesNonExemptEncryption": false,
+      "NSLocalNetworkUsageDescription": "Connect to your computer's Nexus Relay on your local Wi-Fi network."
+    }
   },
   android: {
     adaptiveIcon: {
-      backgroundColor: "#E6F4FE",
+      backgroundColor: "#070D19",
       foregroundImage: "./assets/images/android-icon-foreground.png",
       backgroundImage: "./assets/images/android-icon-background.png",
       monochromeImage: "./assets/images/android-icon-monochrome.png",
@@ -106,7 +106,16 @@ const config: ExpoConfig = {
   },
   plugins: [
     "expo-asset",
+    "./plugins/with-nexus-cleartext-traffic",
     "expo-router",
+    "expo-localization",
+    [
+      "expo-camera",
+      {
+        cameraPermission: "Allow LEVEL UP ARENA NEXUS to scan the local pairing QR code.",
+        recordAudioAndroid: false,
+      },
+    ],
     [
       "expo-audio",
       {
@@ -126,9 +135,9 @@ const config: ExpoConfig = {
         image: "./assets/images/splash-icon.png",
         imageWidth: 200,
         resizeMode: "contain",
-        backgroundColor: "#ffffff",
+        backgroundColor: "#070D19",
         dark: {
-          backgroundColor: "#000000",
+          backgroundColor: "#070D19",
         },
       },
     ],
