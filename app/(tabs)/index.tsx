@@ -314,7 +314,7 @@ export default function HomeScreen() {
               </View>
             </View>
           )}
-          {downloads.map((item) => <View key={item.id} style={styles.transferRow}><View style={styles.transferIcon}><MaterialCommunityIcons name={item.kind === "video" ? "movie-play-outline" : item.kind === "torrent" ? "magnet" : "file-download-outline"} size={18} color={item.status === "failed" ? "#F28A83" : COLORS.cyan} /></View><View style={{ flex: 1, minWidth: 0 }}><View style={styles.transferTitleRow}><Text numberOfLines={1} style={styles.transferTitle}>{item.title}</Text><Text style={styles.transferPercent}>{item.percent.toFixed(0)}%</Text></View><Text style={styles.transferMeta}>{item.engine} · {item.speedMBps.toFixed(1)} MB/s {item.error ? `· ${item.error}` : `· ${item.status}`}</Text><View style={styles.progressTrack}><View style={[styles.progressValue, { width: `${Math.min(100, Math.max(0, item.percent))}%`, backgroundColor: item.status === "failed" ? "#F28A83" : item.status === "complete" ? COLORS.green : COLORS.cyan }]} /></View></View>{(item.status === "queued" || item.status === "downloading") && <TouchableOpacity onPress={() => void cancelComputerDownload(item.id)} style={styles.cancelButton}><MaterialCommunityIcons name="close" size={16} color={COLORS.muted} /></TouchableOpacity>}</View>)}
+          {downloads.map((item) => <View key={item.id} style={styles.transferRow}><View style={styles.transferIcon}><MaterialCommunityIcons name={item.kind === "video" ? "movie-play-outline" : item.kind === "torrent" ? "magnet" : "file-download-outline"} size={18} color={item.status === "failed" ? "#F28A83" : COLORS.cyan} /></View><View style={{ flex: 1, minWidth: 0 }}><View style={styles.transferTitleRow}><Text numberOfLines={1} style={styles.transferTitle}>{item.title}</Text><Text style={styles.transferPercent}>{item.percent.toFixed(0)}%</Text></View><Text style={styles.transferMeta}>{item.engine} · {item.speedMBps.toFixed(1)} MB/s{item.etaSeconds !== null && item.etaSeconds !== undefined ? ` · ${t("remaining")} ${formatEta(item.etaSeconds)}` : ""} {item.error ? `· ${item.error}` : `· ${item.status}`}</Text><View style={styles.progressTrack}><View style={[styles.progressValue, { width: `${Math.min(100, Math.max(0, item.percent))}%`, backgroundColor: item.status === "failed" ? "#F28A83" : item.status === "complete" ? COLORS.green : COLORS.cyan }]} /></View></View>{(item.status === "queued" || item.status === "downloading") && <TouchableOpacity onPress={() => void cancelComputerDownload(item.id)} style={styles.cancelButton}><MaterialCommunityIcons name="close" size={16} color={COLORS.muted} /></TouchableOpacity>}</View>)}
         </View>
       ) : (
         <View style={styles.emptyState}>
@@ -385,7 +385,7 @@ export default function HomeScreen() {
           {notice ? <View style={styles.noticeBar}><MaterialCommunityIcons name="information-outline" size={16} color={COLORS.cyan} /><Text style={styles.noticeText}>{notice}</Text></View> : null}
           {!isWide && <View style={styles.inlineRelay}>{aside}</View>}
           {queueCard}
-          <View style={styles.bottomNote}><MaterialCommunityIcons name="lock-check" size={14} color={COLORS.green} /><Text style={styles.bottomNoteText}>{t("noCloud")}</Text><Text style={styles.bottomBuild}>NEXUS · PHASE 01</Text></View>
+          <View style={styles.bottomNote}><MaterialCommunityIcons name="lock-check" size={14} color={COLORS.green} /><Text style={styles.bottomNoteText}>{t("noCloud")}</Text><Text style={styles.bottomBuild}>NEXUS · PHASE 02</Text></View>
         </ScrollView>
         {isWide && navItems.length > 0 && aside}
       </View>
@@ -399,6 +399,14 @@ function formatBytes(bytes: number) {
   const units = ["B", "KB", "MB", "GB", "TB"];
   const index = Math.min(units.length - 1, Math.floor(Math.log(bytes) / Math.log(1024)));
   return `${(bytes / 1024 ** index).toFixed(index === 0 ? 0 : 1)} ${units[index]}`;
+}
+
+function formatEta(seconds: number) {
+  const total = Math.max(0, Math.ceil(seconds));
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const remainder = total % 60;
+  return hours ? `${hours}:${String(minutes).padStart(2, "0")}:${String(remainder).padStart(2, "0")}` : `${minutes}:${String(remainder).padStart(2, "0")}`;
 }
 
 function EngineRow({ icon, name, engines, color, ready }: { icon: keyof typeof MaterialCommunityIcons.glyphMap; name: string; engines: string; color: string; ready: boolean }) {

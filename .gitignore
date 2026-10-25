@@ -63,6 +63,9 @@ Thumbs.db
 *.tgz
 *.tar.gz
 .cache/
+/binaries/
+/release/
+/desktop/relay-server.cjs
 
 # Webdev artifacts (checkpoint zips, migrations, etc.)
 .webdev/

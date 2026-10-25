@@ -19,7 +19,15 @@
     "qr": "node scripts/generate_qr.mjs",
     "relay": "tsx relay/server.ts",
     "export:web": "expo export --platform web --output-dir web-dist",
-    "desktop": "pnpm export:web && pnpm relay"
+    "desktop": "pnpm export:web && pnpm relay",
+    "relay:bundle": "esbuild relay/server.ts --bundle --platform=node --format=cjs --target=node22 --outfile=desktop/relay-server.cjs",
+    "desktop:run": "pnpm export:web && pnpm relay:bundle && pnpm exec electron desktop/main.cjs",
+    "binaries:fetch": "node scripts/fetch-windows-binaries.mjs",
+    "binaries:verify": "node scripts/verify-windows-binaries.mjs",
+    "binaries:smoke": "node scripts/smoke-windows-downloaders.mjs",
+    "binaries:smoke:win": "cross-env NEXUS_SMOKE_WINDOWS=1 node scripts/smoke-windows-downloaders.mjs",
+    "relay:e2e": "tsx scripts/smoke-relay-downloads.ts",
+    "desktop:build:win": "pnpm binaries:fetch && pnpm export:web && pnpm relay:bundle && pnpm binaries:verify && cross-env NODE_OPTIONS=--max-old-space-size=16384 pnpm exec electron-builder --win nsis --x64 --config electron-builder.yml --publish never"
   },
   "dependencies": {
     "@expo/metro-runtime": "~57.0.16",
@@ -83,9 +91,12 @@
     "concurrently": "^9.2.1",
     "cross-env": "^7.0.3",
     "drizzle-kit": "^0.31.8",
+    "electron": "45.0.0",
+    "electron-builder": "26.18.0",
     "esbuild": "^0.25.12",
     "eslint": "^9.39.2",
     "eslint-config-expo": "~57.0.2",
+    "extract-zip": "2.0.1",
     "prettier": "^3.7.4",
     "qrcode": "^1.5.4",
     "tailwindcss": "^3.4.17",
@@ -93,11 +104,5 @@
     "typescript": "~6.0.3",
     "vitest": "^2.1.9"
   },
-  "packageManager": "pnpm@9.12.0",
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "esbuild",
-      "unrs-resolver"
-    ]
-  }
+  "packageManager": "pnpm@9.12.0"
 }

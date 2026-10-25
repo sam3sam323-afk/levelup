@@ -1,6 +1,6 @@
 import "dotenv/config";
 import { randomBytes, randomInt, timingSafeEqual } from "node:crypto";
-import { createServer } from "node:http";
+import { createServer, type Server } from "node:http";
 import { networkInterfaces } from "node:os";
 import { existsSync } from "node:fs";
 import path from "node:path";
@@ -15,10 +15,11 @@ const HOST = process.env.NEXUS_HOST ?? "0.0.0.0";
 const PAIRING_TTL_MS = 5 * 60 * 1000;
 const MAX_PAIR_ATTEMPTS = 5;
 const TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000;
-const WEB_DIR = path.resolve(process.cwd(), "web-dist");
+const WEB_DIR = path.resolve(process.env.NEXUS_WEB_DIR?.trim() || path.join(process.cwd(), "web-dist"));
 const tokens = new Map<string, { deviceName: string; expiresAt: number }>();
 let pairing = { code: newPairingCode(), expiresAt: Date.now() + PAIRING_TTL_MS, attempts: 0, consumed: false };
 let desktopToken = "";
+let server: Server | null = null;
 
 function newPairingCode() { return String(randomInt(0, 1_000_000)).padStart(6, "0"); }
 function rotatePairing() { pairing = { code: newPairingCode(), expiresAt: Date.now() + PAIRING_TTL_MS, attempts: 0, consumed: false }; }
@@ -187,20 +188,39 @@ app.use((req, res) => {
   res.status(404).end();
 });
 
-const server = createServer(app);
-server.listen(PORT, HOST, () => {
+function logReady() {
   const urls = localAddresses().map((ip) => `http://${ip}:${PORT}`);
   console.log("\nLEVEL UP ARENA NEXUS — local relay ready");
   console.log(`Desktop dashboard: http://localhost:${PORT}`);
   console.log(`Local network endpoints: ${urls.length ? urls.join("  |  ") : "No non-loopback IPv4 address found"}`);
   console.log(`Download folder: ${getDownloadDirectory()}`);
   console.log("Pairing code is visible only from the desktop dashboard. This process does not connect to a cloud account.\n");
-});
-
-function shutdown() {
-  shutdownDownloads();
-  server.close(() => process.exit(0));
-  setTimeout(() => process.exit(0), 1800).unref();
 }
-process.once("SIGINT", shutdown);
-process.once("SIGTERM", shutdown);
+
+export function startRelayServer() {
+  if (server?.listening) return server;
+  server = createServer(app);
+  server.listen(PORT, HOST, logReady);
+  return server;
+}
+
+export function stopRelayServer() {
+  shutdownDownloads();
+  const current = server;
+  server = null;
+  if (!current?.listening) return Promise.resolve();
+  return new Promise<void>((resolve) => {
+    current.close(() => resolve());
+    current.closeAllConnections();
+  });
+}
+
+if (process.env.NEXUS_RELAY_AUTOSTART !== "0") {
+  startRelayServer();
+  const shutdown = () => {
+    void stopRelayServer().finally(() => process.exit(0));
+    setTimeout(() => process.exit(0), 1800).unref();
+  };
+  process.once("SIGINT", shutdown);
+  process.once("SIGTERM", shutdown);
+}

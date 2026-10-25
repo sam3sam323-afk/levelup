@@ -64,7 +64,7 @@ const config: ExpoConfig = {
   version: "1.0.0",
   extra: publicRuntime,
   orientation: "portrait",
-  icon: "./assets/images/icon.png",
+  icon: "./assets/images/nexus-official.png",
   scheme: env.scheme,
   userInterfaceStyle: "automatic",
   ios: {
@@ -78,7 +78,7 @@ const config: ExpoConfig = {
   android: {
     adaptiveIcon: {
       backgroundColor: "#070D19",
-      foregroundImage: "./assets/images/android-icon-foreground.png",
+      foregroundImage: "./assets/images/nexus-official-adaptive.png",
       backgroundImage: "./assets/images/android-icon-background.png",
       monochromeImage: "./assets/images/android-icon-monochrome.png",
     },
@@ -102,7 +102,7 @@ const config: ExpoConfig = {
   web: {
     bundler: "metro",
     output: "static",
-    favicon: "./assets/images/favicon.png",
+    favicon: "./assets/images/nexus-official.png",
   },
   plugins: [
     "expo-asset",

@@ -1,0 +1,49 @@
+appId: com.leveluparena.nexus
+productName: LEVEL UP ARENA NEXUS
+asar: true
+publish: null
+directories:
+  output: release/win
+files:
+  - desktop/main.cjs
+  - desktop/relay-server.cjs
+  - package.json
+  - assets/images/icon.ico
+  - '!**/*.map'
+extraMetadata:
+  name: level-up-arena-nexus
+  productName: LEVEL UP ARENA NEXUS
+  main: desktop/main.cjs
+extraResources:
+  - from: binaries/win-x64
+    to: binaries/win-x64
+    filter:
+      - '**/*'
+  - from: web-dist
+    to: web-dist
+    filter:
+      - '**/*'
+  - from: licenses
+    to: licenses
+    filter:
+      - '**/*'
+  - from: assets/images/icon.ico
+    to: app-icon.ico
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  icon: assets/images/icon.ico
+  artifactName: LEVEL-UP-ARENA-NEXUS-Setup-${version}-${arch}.${ext}
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: LEVEL UP ARENA NEXUS
+  installerIcon: assets/images/icon.ico
+  installerHeaderIcon: assets/images/icon.ico
+  uninstallerIcon: assets/images/icon.ico
+  runAfterFinish: true

@@ -11,7 +11,7 @@ export type Transfer = {
   id: string; title: string; url: string; kind: "video" | "file" | "torrent";
   engine: "yt-dlp" | "aria2c"; quality?: string;
   status: "queued" | "downloading" | "complete" | "failed" | "cancelled";
-  percent: number; speedMBps: number; downloadedBytes: number; totalBytes: number | null;
+  percent: number; speedMBps: number; etaSeconds?: number | null; downloadedBytes: number; totalBytes: number | null;
   createdAt: number; updatedAt: number; error?: string;
 };
 export type EngineStatus = {

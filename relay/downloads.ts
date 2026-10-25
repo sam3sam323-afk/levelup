@@ -18,6 +18,7 @@ export type DownloadJob = {
   status: DownloadStatus;
   percent: number;
   speedMBps: number;
+  etaSeconds: number | null;
   downloadedBytes: number;
   totalBytes: number | null;
   createdAt: number;
@@ -85,10 +86,11 @@ function rateFromYtDlp(value: string) {
 
 function parseProgress(job: DownloadJob, line: string) {
   if (job.engine === "yt-dlp" && line.includes("|")) {
-    const [rawPercent, rawSpeed, rawDownloaded, rawTotal] = line.split("|");
+    const [rawPercent, rawSpeed, rawDownloaded, rawTotal, rawEta] = line.split("|");
     const p = Number(rawPercent?.replace(/[^\d.]/g, ""));
     if (Number.isFinite(p)) job.percent = Math.min(99.9, Math.max(0, p));
     job.speedMBps = rateFromYtDlp(rawSpeed || "");
+    job.etaSeconds = parseEtaSeconds(rawEta || "");
     const downloaded = Number(rawDownloaded);
     const total = Number(rawTotal);
     if (Number.isFinite(downloaded) && downloaded >= 0) job.downloadedBytes = downloaded;
@@ -103,6 +105,8 @@ function parseProgress(job: DownloadJob, line: string) {
     }
     const speed = line.match(/DL:([\d.]+)\s*([KMGT]?i?B)/i);
     if (speed) job.speedMBps = parseBytes(speed[1], speed[2]) / (1024 ** 2);
+    const eta = line.match(/\bETA:([^\s]+)/i);
+    if (eta) job.etaSeconds = parseEtaSeconds(eta[1]);
   }
   job.updatedAt = Date.now();
   emitUpdate();
@@ -115,6 +119,18 @@ function parseBytes(amount: string, unit: string) {
   return Math.round(value * (1024 ** exponent));
 }
 
+export function parseEtaSeconds(value: string) {
+  const source = value.trim().toLowerCase();
+  if (!source || ["na", "n/a", "--", "unknown", "unknowns"].includes(source)) return null;
+  const direct = Number(source);
+  if (Number.isFinite(direct) && direct >= 0) return Math.ceil(direct);
+  const clock = source.match(/^(?:(\d+):)?(\d{1,2}):(\d{2})$/);
+  if (clock) return Number(clock[1] || 0) * 3600 + Number(clock[2]) * 60 + Number(clock[3]);
+  const units = source.match(/^(?:(\d+(?:\.\d+)?)d)?(?:(\d+(?:\.\d+)?)h)?(?:(\d+(?:\.\d+)?)m)?(?:(\d+(?:\.\d+)?)s)?$/);
+  if (!units || !units.slice(1).some(Boolean)) return null;
+  return Math.ceil(Number(units[1] || 0) * 86400 + Number(units[2] || 0) * 3600 + Number(units[3] || 0) * 60 + Number(units[4] || 0));
+}
+
 function emitUpdate() { events.emit("update", listDownloads()); }
 export function onDownloadUpdate(listener: (items: DownloadJob[]) => void) { events.on("update", listener); return () => events.off("update", listener); }
 export function listDownloads() { return [...jobs.values()].sort((a, b) => b.createdAt - a.createdAt).map((job) => ({ ...job })); }
@@ -125,7 +141,7 @@ export function createDownload(input: NewDownload) {
   const title = titleFromUrl(input.url, input.kind);
   const job: DownloadJob = {
     id, title, url: input.url, kind: input.kind, engine, quality: input.quality,
-    status: "queued", percent: 0, speedMBps: 0, downloadedBytes: 0, totalBytes: null,
+    status: "queued", percent: 0, speedMBps: 0, etaSeconds: null, downloadedBytes: 0, totalBytes: null,
     createdAt: Date.now(), updatedAt: Date.now(),
   };
   jobs.set(id, job);
@@ -208,14 +224,14 @@ async function runJob(job: DownloadJob) {
   });
 }
 
-function ytDlpArgs(job: DownloadJob, directory: string) {
+export function ytDlpArgs(job: DownloadJob, directory: string) {
   const height = qualityHeight(job.quality);
   const format = height
     ? `bv*[height=${height}]+ba/b[height=${height}]/bv*[height<=${height}]+ba/b[height<=${height}]`
     : "bv*+ba/b";
   const args = [
     "--no-warnings", "--newline", "--progress",
-    "--progress-template", "download:%(progress._percent_str)s|%(progress._speed_str)s|%(progress.downloaded_bytes)s|%(progress.total_bytes_estimate)s",
+    "--progress-template", "download:%(progress._percent_str)s|%(progress._speed_str)s|%(progress.downloaded_bytes)s|%(progress.total_bytes_estimate)s|%(progress.eta)s",
     "--format", format, "--merge-output-format", "mp4", "--remux-video", "mp4",
     "--paths", directory, "--output", "%(title).140B.%(ext)s",
   ];
@@ -224,7 +240,7 @@ function ytDlpArgs(job: DownloadJob, directory: string) {
   return args;
 }
 
-function ariaArgs(job: DownloadJob, directory: string) {
+export function ariaArgs(job: DownloadJob, directory: string) {
   const args = [
     "--max-connection-per-server=16", "--split=16", "--bt-max-peers=16", "--min-split-size=1M",
     "--continue=true", "--summary-interval=1", "--console-log-level=notice",
