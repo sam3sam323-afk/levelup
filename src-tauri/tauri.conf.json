@@ -31,7 +31,10 @@
   "bundle": {
     "active": true,
     "targets": "all",
-    "icon": ["icons/nexus-icon.png"],
+    "icon": [
+      "icons/icon.ico",
+      "icons/nexus-icon.png"
+    ],
     "externalBin": [
       "binaries/yt-dlp",
       "binaries/aria2c",
