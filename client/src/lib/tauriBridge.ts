@@ -1,6 +1,5 @@
 import { invoke as tauriInvoke, isTauri as isTauriApp } from "@tauri-apps/api/core";
 import { listen as tauriListen } from "@tauri-apps/api/event";
-import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
 export type TauriEngine = "yt-dlp" | "aria2c";
@@ -24,6 +23,7 @@ export type DownloadOptions = {
   audioOnly?: boolean;
   playlist?: boolean;
   quality?: DownloadQuality;
+  formatSelector?: string;
 };
 
 export type DownloadTask = {
@@ -41,6 +41,7 @@ export type DownloadTask = {
   etaSeconds?: number;
   filename?: string;
   pid?: number;
+  createdAt: string;
   lastError?: string;
   playlistItems: PlaylistItemProgress[];
   playlistCurrentIndex?: number;
@@ -91,40 +92,37 @@ export async function listenTauri<T>(event: string, handler: (payload: T) => voi
 }
 
 
-let browserWindow: { close: () => Promise<void> } | null = null;
-
-export async function openBrowserWindow(rawUrl: string): Promise<boolean> {
+export async function openBrowserWindow(rawUrl: string): Promise<string | null> {
   const url = rawUrl.trim();
   if (!/^https?:\/\//i.test(url) || /[\u0000-\u001f\u007f]/.test(url) || url.length > 8192) {
     throw new Error("Only valid http(s) URLs are allowed");
   }
-  const runtime = await getTauriRuntime();
-  if (!runtime) return false;
-  if (browserWindow) {
-    await browserWindow.close().catch(() => undefined);
-    browserWindow = null;
-  }
-  const child = new WebviewWindow("nexus-browser", {
-    url,
-    title: "LEVEL UP NEXUS — Browser",
-    width: 1280,
-    height: 820,
-    minWidth: 800,
-    minHeight: 560,
-    resizable: true,
-    center: true,
-  });
-  browserWindow = child;
-  try {
-    await new Promise<void>((resolve, reject) => {
-      child.once("tauri://created", () => resolve());
-      child.once("tauri://error", (event) => reject(event));
-    });
-    return true;
-  } catch (error) {
-    if (browserWindow === child) browserWindow = null;
-    throw error;
-  }
+  return invokeTauri<string>("open_browser_window", { url });
+}
+
+export type BrowserTab = {
+  label: string;
+  url: string;
+  title: string;
+  active: boolean;
+};
+
+export async function listBrowserTabs(): Promise<BrowserTab[]> {
+  return (await invokeTauri<BrowserTab[]>("list_browser_tabs")) ?? [];
+}
+
+export async function restoreBrowserTabs(): Promise<BrowserTab[]> {
+  return (await invokeTauri<BrowserTab[]>("restore_browser_tabs")) ?? [];
+}
+
+export async function focusBrowserTab(label: string): Promise<boolean> {
+  if (!isTauriApp()) return false;
+  return (await invokeTauri<boolean>("focus_browser_tab", { label })) ?? false;
+}
+
+export async function closeBrowserTab(label: string): Promise<boolean> {
+  if (!isTauriApp()) return false;
+  return (await invokeTauri<boolean>("close_browser_tab", { label })) ?? false;
 }
 
 export async function minimizeAppWindow(): Promise<void> {

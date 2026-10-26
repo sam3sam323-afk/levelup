@@ -38,7 +38,7 @@
         "frame-ancestors": "'none'"
       }
     },
-    "withGlobalTauri": false
+    "withGlobalTauri": true
   },
   "bundle": {
     "active": true,

@@ -36,6 +36,8 @@ pub struct DownloadOptions {
     pub playlist: Option<bool>,
     #[serde(default)]
     pub quality: Option<String>,
+    #[serde(default)]
+    pub format_selector: Option<String>,
 }
 
 impl Default for DownloadOptions {
@@ -46,6 +48,7 @@ impl Default for DownloadOptions {
             audio_only: Some(false),
             playlist: Some(false),
             quality: Some("best".into()),
+            format_selector: None,
         }
     }
 }

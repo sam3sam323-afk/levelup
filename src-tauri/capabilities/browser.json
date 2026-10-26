@@ -1,7 +1,44 @@
 {
-  "$schema": "../gen/schemas/desktop-schema.json",
+  "$schema": "../gen/schemas/remote-schema.json",
   "identifier": "browser-window-isolated",
-  "description": "The external browser WebView receives no Tauri, Store, Shell, or application command permissions.",
-  "windows": ["nexus-browser"],
-  "permissions": []
+  "description": "Remote browser pages receive only the scoped media-download command and no filesystem, shell, or general application commands.",
+  "windows": [
+    "nexus-browser-1",
+    "nexus-browser-2",
+    "nexus-browser-3",
+    "nexus-browser-4",
+    "nexus-browser-5",
+    "nexus-browser-6",
+    "nexus-browser-7",
+    "nexus-browser-8"
+  ],
+  "remote": {
+    "urls": [
+      "https://youtube.com",
+      "https://*.youtube.com",
+      "https://youtu.be",
+      "https://facebook.com",
+      "https://*.facebook.com",
+      "https://fb.watch",
+      "https://*.fb.watch",
+      "https://vimeo.com",
+      "https://*.vimeo.com",
+      "https://tiktok.com",
+      "https://*.tiktok.com",
+      "https://instagram.com",
+      "https://*.instagram.com",
+      "https://dailymotion.com",
+      "https://*.dailymotion.com",
+      "https://twitter.com",
+      "https://*.twitter.com",
+      "https://x.com",
+      "https://*.x.com",
+      "https://twitch.tv",
+      "https://*.twitch.tv"
+    ]
+  },
+  "permissions": [
+    "allow-browser-get-video-formats",
+    "allow-browser-start-download"
+  ]
 }

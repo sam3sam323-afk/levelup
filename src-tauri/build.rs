@@ -1,3 +1,28 @@
 fn main() {
-    tauri_build::build()
+    tauri_build::try_build(
+        tauri_build::Attributes::new().app_manifest(
+            tauri_build::AppManifest::new().commands(&[
+                "start_download",
+                "pause_download",
+                "resume_download",
+                "cancel_download",
+                "remove_download",
+                "get_download",
+                "list_downloads",
+                "get_default_download_dir",
+                "get_engine_status",
+                "get_system_drives",
+                "open_file_location",
+                "open_browser_window",
+                "list_browser_tabs",
+                "restore_browser_tabs",
+                "focus_browser_tab",
+                "close_browser_tab",
+                "browser_save_tab",
+                "browser_get_video_formats",
+                "browser_start_download",
+            ]),
+        ),
+    )
+    .expect("failed to build Tauri application permissions");
 }

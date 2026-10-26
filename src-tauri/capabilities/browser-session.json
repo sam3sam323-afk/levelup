@@ -1,0 +1,19 @@
+{
+  "$schema": "../gen/schemas/remote-schema.json",
+  "identifier": "browser-session-save",
+  "description": "Allows browser tabs to persist only their current URL and title for session restoration.",
+  "windows": [
+    "nexus-browser-1",
+    "nexus-browser-2",
+    "nexus-browser-3",
+    "nexus-browser-4",
+    "nexus-browser-5",
+    "nexus-browser-6",
+    "nexus-browser-7",
+    "nexus-browser-8"
+  ],
+  "remote": {
+    "urls": ["https://*", "http://*"]
+  },
+  "permissions": ["allow-browser-save-tab"]
+}
