@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self'; script-src 'self'; img-src 'self' data:; connect-src 'self' http://localhost:* http://127.0.0.1:*; object-src 'none'; base-uri 'none'; frame-src 'none'" />
+  <title>LEVEL UP ARENA NEXUS — Browser</title>
+  <link rel="stylesheet" href="browser-shell.css" />
+</head>
+<body>
+  <header class="toolbar">
+    <div class="brand"><span class="mark">N</span><span>LEVEL UP <b>NEXUS</b></span></div>
+    <div class="nav-controls">
+      <button id="back" class="icon" aria-label="Back">‹</button>
+      <button id="forward" class="icon" aria-label="Forward">›</button>
+      <button id="reload" class="icon" aria-label="Reload">↻</button>
+    </div>
+    <form id="address-form" class="address-form">
+      <span class="secure-mark">⌁</span>
+      <input id="address" type="text" spellcheck="false" autocomplete="off" placeholder="https://…" aria-label="Address or search" />
+      <button id="go" class="go-button" type="submit">GO</button>
+    </form>
+    <button id="media-toggle" class="media-toggle" aria-expanded="false">
+      <span id="media-label">Media</span><b id="candidate-count">0</b>
+    </button>
+    <button id="support" class="support-button"><span class="telegram-mark">➤</span><span id="support-label">Support</span></button>
+    <div id="page-status" class="page-status" title="Nexus local browser"><span class="status-dot"></span><span id="status-label">Local</span></div>
+  </header>
+  <main id="webview-placeholder" aria-label="Browser page"></main>
+  <section id="media-panel" class="media-panel" aria-label="Detected media" aria-hidden="true">
+    <div class="panel-head">
+      <div><strong id="panel-title">Detected media</strong><span id="panel-subtitle">No media found yet.</span></div>
+      <button id="close-panel" class="icon close" aria-label="Close">×</button>
+    </div>
+    <div id="media-list" class="media-list"></div>
+  </section>
+  <footer class="footer"><span id="footer-domain">Ready</span><span class="footer-right"><span class="status-dot"></span><span id="footer-local">Local session · No cloud relay</span></span></footer>
+  <script src="browser-shell.js"></script>
+</body>
+</html>

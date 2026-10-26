@@ -1,5 +1,6 @@
 packages:
   - "."
+  - "desktop/runtime"
 onlyBuiltDependencies:
   - electron
   - esbuild

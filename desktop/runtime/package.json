@@ -1,0 +1,12 @@
+{
+  "name": "level-up-arena-nexus-desktop-runtime",
+  "version": "1.1.0",
+  "private": true,
+  "productName": "LEVEL UP ARENA NEXUS",
+  "description": "Electron runtime for LEVEL UP ARENA NEXUS",
+  "author": "LEVEL UP ARENA NEXUS",
+  "main": "desktop/main.cjs",
+  "dependencies": {
+    "electron-updater": "6.8.11"
+  }
+}

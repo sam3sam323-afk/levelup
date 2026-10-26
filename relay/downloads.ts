@@ -5,9 +5,9 @@ import { existsSync, mkdirSync, readdirSync, statSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-export type DownloadKind = "video" | "file" | "torrent";
+export type DownloadKind = "video" | "audio" | "file" | "torrent";
 export type DownloadStatus = "queued" | "downloading" | "complete" | "failed" | "cancelled";
-export type NewDownload = { url: string; kind: DownloadKind; quality?: string; deviceName?: string };
+export type NewDownload = { url: string; kind: DownloadKind; quality?: string; audioFormat?: "mp3" | "m4a"; deviceName?: string };
 export type DownloadJob = {
   id: string;
   title: string;
@@ -15,6 +15,7 @@ export type DownloadJob = {
   kind: DownloadKind;
   engine: "yt-dlp" | "aria2c";
   quality?: string;
+  audioFormat?: "mp3" | "m4a";
   status: DownloadStatus;
   percent: number;
   speedMBps: number;
@@ -30,6 +31,7 @@ const jobs = new Map<string, DownloadJob>();
 const childByJob = new Map<string, ChildProcess>();
 const queue: string[] = [];
 const events = new EventEmitter();
+const completedTargets = new Map<string, { filePath?: string; folderPath: string }>();
 const MAX_ACTIVE = Math.max(1, Math.min(4, Number(process.env.NEXUS_MAX_PARALLEL ?? 2) || 2));
 let activeCount = 0;
 
@@ -135,12 +137,30 @@ function emitUpdate() { events.emit("update", listDownloads()); }
 export function onDownloadUpdate(listener: (items: DownloadJob[]) => void) { events.on("update", listener); return () => events.off("update", listener); }
 export function listDownloads() { return [...jobs.values()].sort((a, b) => b.createdAt - a.createdAt).map((job) => ({ ...job })); }
 
+export function getCompletedDownloadTargets(id: string) {
+  const job = jobs.get(id);
+  const target = completedTargets.get(id);
+  if (!job || job.status !== "complete" || !target) return null;
+  try {
+    const folderPath = existsSync(target.folderPath) && statSync(target.folderPath).isDirectory() ? target.folderPath : null;
+    const filePath = target.filePath && existsSync(target.filePath) && statSync(target.filePath).isFile() ? target.filePath : undefined;
+    return folderPath ? { filePath, folderPath } : null;
+  } catch { return null; }
+}
+
+function singleFileInDirectory(directory: string) {
+  try {
+    const files = readdirSync(directory, { withFileTypes: true }).filter((entry) => entry.isFile() && !entry.name.startsWith("."));
+    return files.length === 1 ? path.join(directory, files[0].name) : undefined;
+  } catch { return undefined; }
+}
+
 export function createDownload(input: NewDownload) {
   const id = randomUUID();
-  const engine = input.kind === "video" ? "yt-dlp" : "aria2c";
+  const engine = input.kind === "video" || input.kind === "audio" ? "yt-dlp" : "aria2c";
   const title = titleFromUrl(input.url, input.kind);
   const job: DownloadJob = {
-    id, title, url: input.url, kind: input.kind, engine, quality: input.quality,
+    id, title, url: input.url, kind: input.kind, engine, quality: input.quality, audioFormat: input.audioFormat,
     status: "queued", percent: 0, speedMBps: 0, etaSeconds: null, downloadedBytes: 0, totalBytes: null,
     createdAt: Date.now(), updatedAt: Date.now(),
   };
@@ -184,7 +204,9 @@ async function runJob(job: DownloadJob) {
     job.status = "failed"; job.error = "Install aria2c on this computer, then restart Nexus Relay."; job.updatedAt = Date.now(); emitUpdate(); return;
   }
 
-  const dir = getDownloadDirectory();
+  const rootDirectory = getDownloadDirectory();
+  const dir = job.kind === "torrent" ? path.join(rootDirectory, `torrent-${job.id}`) : rootDirectory;
+  mkdirSync(dir, { recursive: true });
   const args = job.engine === "yt-dlp" ? ytDlpArgs(job, dir) : ariaArgs(job, dir);
   const command = job.engine === "yt-dlp" ? engines.ytDlp.executable : engines.aria2c.executable;
   job.status = "downloading"; job.updatedAt = Date.now(); emitUpdate();
@@ -192,15 +214,25 @@ async function runJob(job: DownloadJob) {
   await new Promise<void>((resolve) => {
     let stdoutBuffer = "";
     let stderrBuffer = "";
+    let reportedOutputPath = "";
     let settled = false;
     const child = spawn(command, args, { cwd: dir, windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
     childByJob.set(job.id, child);
+    const processLine = (line: string, target: "stdout" | "stderr") => {
+      const value = line.trim();
+      if (!value) return;
+      if (target === "stdout" && value.startsWith("NEXUS_OUTPUT_PATH=")) {
+        reportedOutputPath = value.slice("NEXUS_OUTPUT_PATH=".length).trim();
+        return;
+      }
+      parseProgress(job, value);
+    };
     const consume = (chunk: Buffer, target: "stdout" | "stderr") => {
       const current = target === "stdout" ? stdoutBuffer + chunk.toString("utf8") : stderrBuffer + chunk.toString("utf8");
       const lines = current.split(/[\r\n]+/);
       const tail = lines.pop() || "";
       if (target === "stdout") stdoutBuffer = tail; else stderrBuffer = tail;
-      for (const line of lines) if (line.trim()) parseProgress(job, line.trim());
+      for (const line of lines) processLine(line, target);
     };
     child.stdout.on("data", (chunk: Buffer) => consume(chunk, "stdout"));
     child.stderr.on("data", (chunk: Buffer) => consume(chunk, "stderr"));
@@ -213,10 +245,16 @@ async function runJob(job: DownloadJob) {
     child.once("close", (code) => {
       if (settled) return; settled = true;
       childByJob.delete(job.id);
-      if (stdoutBuffer.trim()) parseProgress(job, stdoutBuffer.trim());
-      if (stderrBuffer.trim()) parseProgress(job, stderrBuffer.trim());
+      processLine(stdoutBuffer, "stdout");
+      processLine(stderrBuffer, "stderr");
       if (job.status !== "cancelled") {
-        if (code === 0) { job.status = "complete"; job.percent = 100; job.speedMBps = 0; job.error = undefined; }
+        if (code === 0) {
+          job.status = "complete"; job.percent = 100; job.speedMBps = 0; job.error = undefined;
+          const filePath = job.engine === "yt-dlp" && reportedOutputPath
+            ? path.resolve(dir, reportedOutputPath)
+            : job.kind === "torrent" ? singleFileInDirectory(dir) : path.join(dir, filenameFromUrl(job.url));
+          completedTargets.set(job.id, { filePath, folderPath: dir });
+        }
         else { job.status = "failed"; job.speedMBps = 0; job.error = `${job.engine} exited with code ${code ?? "unknown"}. Check the source URL, quality, and installed codecs.`; }
       }
       job.updatedAt = Date.now(); emitUpdate(); resolve();
@@ -229,15 +267,72 @@ export function ytDlpArgs(job: DownloadJob, directory: string) {
   const format = height
     ? `bv*[height=${height}]+ba/b[height=${height}]/bv*[height<=${height}]+ba/b[height<=${height}]`
     : "bv*+ba/b";
-  const args = [
-    "--no-warnings", "--newline", "--progress",
-    "--progress-template", "download:%(progress._percent_str)s|%(progress._speed_str)s|%(progress.downloaded_bytes)s|%(progress.total_bytes_estimate)s|%(progress.eta)s",
-    "--format", format, "--merge-output-format", "mp4", "--remux-video", "mp4",
-    "--paths", directory, "--output", "%(title).140B.%(ext)s",
-  ];
+  const args = ["--no-warnings", "--newline", "--progress", "--no-playlist", "--no-simulate",
+    "--print", "after_move:NEXUS_OUTPUT_PATH=%(filepath)s",
+    "--progress-template", "download:%(progress._percent_str)s|%(progress._speed_str)s|%(progress.downloaded_bytes)s|%(progress.total_bytes_estimate)s|%(progress.eta)s"];
+  if (job.kind === "audio") args.push("--extract-audio", "--audio-format", job.audioFormat || "mp3", "--audio-quality", "0");
+  else args.push("--format", format, "--merge-output-format", "mp4", "--remux-video", "mp4");
+  args.push("--paths", directory, "--output", "%(title).140B.%(ext)s");
   if (process.env.FFMPEG_PATH) args.push("--ffmpeg-location", process.env.FFMPEG_PATH);
   args.push(job.url);
   return args;
+}
+
+export type AvailableVideoFormat = { quality: string; height: number; extension: string; filesizeBytes: number | null };
+export type MediaFormatInfo = { title: string; durationSeconds: number | null; formats: AvailableVideoFormat[] };
+
+export function extractAvailableVideoFormats(info: Record<string, unknown>): MediaFormatInfo {
+  const byHeight = new Map<number, { option: AvailableVideoFormat; score: number }>();
+  const rawFormats = Array.isArray(info.formats) ? info.formats as Record<string, unknown>[] : [];
+  for (const raw of rawFormats) {
+    const height = Number(raw.height);
+    if (!Number.isInteger(height) || height < 1 || raw.vcodec === "none") continue;
+    const extension = typeof raw.ext === "string" ? raw.ext : "unknown";
+    const filesize = Number(raw.filesize ?? raw.filesize_approx);
+    const score = Number(raw.tbr) + (extension === "mp4" ? 100000 : 0) + (raw.acodec !== "none" ? 50000 : 0);
+    const current = byHeight.get(height);
+    if (current && current.score >= score) continue;
+    byHeight.set(height, {
+      score,
+      option: { quality: `${height}p`, height, extension, filesizeBytes: Number.isFinite(filesize) && filesize > 0 ? Math.round(filesize) : null },
+    });
+  }
+  const title = typeof info.title === "string" && info.title.trim() ? info.title.slice(0, 140) : "Media";
+  const duration = Number(info.duration);
+  return {
+    title,
+    durationSeconds: Number.isFinite(duration) && duration >= 0 ? duration : null,
+    formats: [...byHeight.values()].map((item) => item.option).sort((a, b) => b.height - a.height),
+  };
+}
+
+export async function inspectVideoFormats(url: string): Promise<MediaFormatInfo> {
+  const status = getEngineStatus();
+  if (!status.ytDlp.installed) throw new Error("yt-dlp is not available on this computer.");
+  return new Promise<MediaFormatInfo>((resolve, reject) => {
+    let stdout = "";
+    let stderr = "";
+    let timedOut = false;
+    let tooLarge = false;
+    const child = spawn(status.ytDlp.executable, ["--dump-single-json", "--skip-download", "--no-playlist", "--no-warnings", "--no-call-home", url], {
+      windowsHide: true, stdio: ["ignore", "pipe", "pipe"],
+    });
+    const timer = setTimeout(() => { timedOut = true; child.kill(); }, 30000);
+    child.stdout.on("data", (chunk: Buffer) => {
+      if (stdout.length + chunk.length > 12 * 1024 * 1024) { tooLarge = true; child.kill(); return; }
+      stdout += chunk.toString("utf8");
+    });
+    child.stderr.on("data", (chunk: Buffer) => { stderr = (stderr + chunk.toString("utf8")).slice(-2048); });
+    child.once("error", () => { clearTimeout(timer); reject(new Error("Could not start yt-dlp metadata inspection.")); });
+    child.once("close", (code) => {
+      clearTimeout(timer);
+      if (timedOut) { reject(new Error("Media format inspection timed out after 30 seconds.")); return; }
+      if (tooLarge) { reject(new Error("The format response exceeded the local size limit.")); return; }
+      if (code !== 0) { reject(new Error(stderr.trim() ? "yt-dlp could not inspect this page. It may be unsupported or require a sign-in." : "yt-dlp could not inspect this page.")); return; }
+      try { resolve(extractAvailableVideoFormats(JSON.parse(stdout) as Record<string, unknown>)); }
+      catch { reject(new Error("yt-dlp returned invalid format metadata.")); }
+    });
+  });
 }
 
 export function ariaArgs(job: DownloadJob, directory: string) {

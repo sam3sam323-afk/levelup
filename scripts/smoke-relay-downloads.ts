@@ -17,6 +17,8 @@ async function main() {
   const workspace = mkdtempSync(path.join(os.tmpdir(), "nexus-relay-e2e-"));
   const outputDir = path.join(workspace, "downloads");
   mkdirSync(outputDir, { recursive: true });
+  process.env.NODE_ENV = "test";
+  process.env.NEXUS_RELAY_TEST_FIXTURES = "1";
   process.env.NEXUS_PORT = "0";
   process.env.NEXUS_HOST = "127.0.0.1";
   process.env.NEXUS_RELAY_AUTOSTART = "0";
@@ -123,6 +125,19 @@ async function main() {
     assert(existsSync(ariaFile) && sha256(readFileSync(ariaFile)) === sha256(fileFixture), "Relay + aria2 did not save the exact direct-file bytes.");
     assert(existsSync(mp4) && statSync(mp4).size > 1024, "Relay + yt-dlp + FFmpeg did not produce the expected MP4.");
     assert(sha256(readFileSync(mp4)) !== sourceVideoHash, "The video output was not remuxed into a new MP4 container.");
+    const directTargets = relayModule.getCompletedDownloadTargets(direct.download.id);
+    const videoTargets = relayModule.getCompletedDownloadTargets(video.download.id);
+    assert(directTargets?.filePath === ariaFile && directTargets.folderPath === outputDir, "Relay did not expose the direct result to the desktop bridge only.");
+    assert(videoTargets?.filePath === mp4 && videoTargets.folderPath === outputDir, "yt-dlp did not report its final post-processed media path.");
+    const publicStateResponse = await fetch(`${relayBase}/api/downloads`, { headers });
+    const publicState = await publicStateResponse.json() as { downloads: Array<{ id: string; filePath?: string; folderPath?: string }> };
+    const publicDirect = publicState.downloads.find((item) => item.id === direct.download.id);
+    assert(publicStateResponse.ok && publicDirect && !("filePath" in publicDirect) && !("folderPath" in publicDirect), "Local filesystem paths leaked into the public Relay download API.");
+    const publicLibraryResponse = await fetch(`${relayBase}/api/library`, { headers });
+    const publicLibrary = await publicLibraryResponse.json() as { directory?: string; files: unknown[] };
+    assert(publicLibraryResponse.ok && !("directory" in publicLibrary) && !JSON.stringify(publicLibrary).includes(workspace), "The local download directory leaked into the paired Relay library API.");
+    const phoneResultAfterDownload = phoneResult as { target?: string; directUrl?: string };
+    assert(phoneResultAfterDownload.target === "phone" && !("filePath" in phoneResultAfterDownload), "Computer file paths leaked into the phone route response.");
     console.log("Relay POST target=phone: direct URL returned without spawning a computer download.");
     console.log("Relay POST target=computer + aria2c: 512 KiB local file downloaded byte-for-byte.");
     console.log(`Relay POST target=computer + yt-dlp + FFmpeg: local MKV remuxed to MP4 (${statSync(mp4).size} bytes).`);

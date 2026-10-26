@@ -8,7 +8,7 @@ const RELAY_TOKEN_KEY = "levelup-nexus.relay-token";
 export type RelaySession = { baseUrl: string; token: string };
 export type PairPayload = { type: "nexus-pair"; relay: string; code: string };
 export type Transfer = {
-  id: string; title: string; url: string; kind: "video" | "file" | "torrent";
+  id: string; title: string; url: string; kind: "video" | "audio" | "file" | "torrent";
   engine: "yt-dlp" | "aria2c"; quality?: string;
   status: "queued" | "downloading" | "complete" | "failed" | "cancelled";
   percent: number; speedMBps: number; etaSeconds?: number | null; downloadedBytes: number; totalBytes: number | null;
@@ -128,7 +128,7 @@ export async function relayRequest<T>(path: string, init: RequestInit = {}): Pro
   return payload as T;
 }
 
-export async function createComputerDownload(input: { url: string; kind: "video" | "file" | "torrent"; quality?: string }) {
+export async function createComputerDownload(input: { url: string; kind: "video" | "audio" | "file" | "torrent"; quality?: string; audioFormat?: "mp3" | "m4a" }) {
   return relayRequest<{ download: Transfer }>("/api/downloads", { method: "POST", body: JSON.stringify({ ...input, target: "computer" }) });
 }
 

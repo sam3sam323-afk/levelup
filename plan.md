@@ -1,4 +1,4 @@
-# خطة LEVEL UP ARENA NEXUS — المرحلة الأولى والثانية
+# خطة LEVEL UP ARENA NEXUS — المراحل الأولى والثانية والثالثة
 
 ## الهدف والنطاق
 المرحلة الأولى تبني تطبيق Expo/React Native للجوال وواجهة كمبيوتر محلية مرتبطة بـNexus Relay. المرحلة الثانية تضيف ملفات المحركات الحقيقية إلى موارد تطبيق Windows وتنتج مثبّت Setup.exe يضمّها، مع إبقاء الاقتران والتنزيلات ضمن الشبكة المحلية وعدم إضافة حسابات أو وسيط سحابي. لا تتغير الهوية البصرية أو تدفق الواجهة المعتمد في المرحلة الأولى.
@@ -37,9 +37,26 @@
 
 ## بنية الملفات
 `app/(tabs)/index.tsx` للوحة المتجاوبة؛ `app/pair.tsx` لشاشة QR والإدخال؛ `lib/i18n.tsx` للغات؛ `lib/relay-client.ts` لعميل الشبكة؛ `relay/server.ts` لخادم Relay وAPI والـQR؛ `relay/downloads.ts` لطابور التنزيل ومحركات العمليات والتقدم وETA؛ `desktop/main.cjs` لنافذة سطح المكتب وتشغيل Relay؛ `desktop/relay-server.cjs` لحزمة Relay المجمّعة؛ `electron-builder.yml` لموارد NSIS؛ `assets/images/nexus-official-source.png` للأيقونة الأصلية دون تعديل، `nexus-official.png` لـExpo وfavicon، `nexus-official-adaptive.png` لأيقونة Android التكيفية، و`icon.ico` لـElectron/Windows؛ `scripts/fetch-windows-binaries.mjs` لجلب ملفات Windows والتحقق منها؛ `binaries/win-x64/` لموارد المحركات المحلية المجهّزة (مستثناة من Git وتُنسخ داخل Setup.exe)؛ `licenses/` لإشعارات التراخيص والمصادر المطابقة؛ `web-dist/` لمخرجات واجهة الكمبيوتر؛ `README.md` للبناء والتشغيل؛ `TODO.md` لمخرجات المرحلتين.
+أضافت المرحلة الثالثة `relay/url-safety.ts` للتحقق من بروتوكول وDNS الوجهة الأولية قبل فحص الوسائط أو التنزيل، مع السماح بعناوين LAN الخاصة عمدًا؛ وتوثق `tests/relay.url-safety.test.ts` سلوك هذا الفحص.
 
 ## الحدود المعروفة
 دعم yt-dlp للجودات والمنصات يعتمد على المصدر ومواده المتاحة؛ FFmpeg يعيد تغليف/يدمج التدفقات المتاحة دون الالتفاف على DRM أو القيود. تنزيل الهاتف المباشر يقتصر على HTTP/HTTPS. Relay المحلي HTTP غير مشفر، لذا يجب تشغيله على شبكة موثوقة وعدم كشف المنفذ للإنترنت؛ قد يتطلب جدار الحماية السماح بمنفذ TCP 8787. إصدار Windows x64 المعبأ دون توقيع رقمي. لا تستطيع Sandbox إثبات اتصال Wi-Fi بكاميرا هاتف فعلي؛ سيبقى اختبار الاتصال المادي معلّمًا كغير منجز ما لم يتوفر جهاز حقيقي.
+يفحص Relay العنوان الأولي ونتائج DNS ويرفض loopback وlink-local وmulticast وبعض النطاقات المحجوزة، مع إبقاء RFC1918/ULA متاحًا للمصادر المحلية المقصودة. لا يعيد التطبيق فحص كل redirect يتبعه yt-dlp/aria2c ولا يمنع DNS rebinding بعد التحقق؛ لذا لا ترسل روابط غير موثوقة. لا يمكن إثبات التحديث end-to-end دون GitHub Release أحدث منشور فعليًا.
 
 
 تتضمن `scripts/smoke-windows-downloaders.mjs` تشغيل ملفات Windows الحقيقية على fixtures محلية، و`scripts/smoke-relay-downloads.ts` اختبار Relay وPOST الوجهات وتنزيل ملف/فيديو محليًا عبر المحركات، دون استخدام روابط وسائط خارجية.
+
+
+## المرحلة الثالثة — الإصدار v1.1.0
+
+تبقى هوية التصميم المقبولة كما هي: NAVY/cyan/violet، دعم العربية RTL واللغتين EN/FR، ولوحة تنزيلات متجاوبة. لا يتغير قالب Expo أو معرفات الجوال. يظل Relay المحلي مسار التنزيل، ولا تُستخدم سحابة أو حسابات خارجية للاقتران أو التنزيلات.
+
+- المتصفح المضمّن يستخدم Chromium عبر Electron `WebContentsView` في نافذة متصفح داخل التطبيق، لا متصفح النظام. تقتصر صفحة الإنترنت على HTTPS/HTTP وخصائص `sandbox`, `contextIsolation`, و`nodeIntegration=false`; لا يُمرّر إليها preload أو Node API. شريط المتصفح الداخلي يظهر العنوان والتنقل والدعم.
+- يعمل Media Sniffer من خلال `webRequest` في Session منفصلة مملوكة للمتصفح فقط، ويقبل MIME/امتدادات video/audio ويميز manifests الملائمة لـyt-dlp، يزيل التكرارات، ويحتفظ بمرجع الصفحة الحالية. تعرض لوحة تنزيل عائمة قائمة العناصر مع زرّ فتحها. عند طلب المستخدم تُستعلم صيغ yt-dlp عبر Relay المحلي (`--dump-single-json --skip-download`) وتعرض قائمة كل ارتفاعات الفيديو المميزة المتاحة، ثم يرسل اختيار الجودة إلى محرك yt-dlp. يضيف العنصر نفسه خيارَي Audio Only: MP3 وM4A عبر `yt-dlp -x --audio-format` وFFmpeg. لا يحول هذا المسار إلى تنزيل audio عبر aria2.
+- يثبت رابط `https://t.me/level_uparena_bot` في رأس لوحة التحكم ورأس المتصفح، ويرسله كما هو إلى النظام لفتحه خارجيًا. تضيف واجهة Expo زر Browser عندما يكون جسر Electron حاضرًا وزر Support لجميع المنصات.
+- تعيد لوحة التحكم تنظيم إدخال التنزيل في شريط موحد يوضح النوع (فيديو/صوت فقط/ملف/تورنت)، الوجهة، ثم قائمة جودة من أفضل جودة حتى 8K أو صيغة MP3/M4A. تُرفع أحجام الخطوط الصغيرة وتباينها في اللوحة وشاشة الاقتران، مع اتساق padding البطاقات ومحاذاة الجانب.
+- عند انتقال تنزيل الكمبيوتر إلى complete أو انتهاء تنزيل مباشر للهاتف، تعرض الواجهة رسالة Toast مؤقتة. توفر نسخة Electron اختصاري فتح الملف وإظهار المجلد من دون كشف المسار المحلي إلى Renderer عام أو Relay API؛ وتخفي فتح ملف مفرد للتورنت.
+- يضاف `electron-updater` بالنسخة المثبتة، وتشغيل آمن للفحص والتنزيل فقط من التطبيقات المعبأة؛ تظهر حالة الفحص/التنزيل/الاستعداد. وافق المستخدم على جعل `sam3sam323-afk/levelup` عامًا، لذلك يحدد electron-builder الـowner/repo صراحةً لملف `app-update.yml`. لا يُضمّن GH_TOKEN ولا يُرفع GitHub Release ضمن أمر البناء؛ أي نشر إصدار منفصل.
+- يضبط `package.json` و`app.config.ts` وmanifest سطح المكتب الإصدار `1.1.0`. يُفصل Electron في Workspace صغير تحت `desktop/runtime` باعتماد الإنتاج `electron-updater` فقط؛ تنسخ `scripts/prepare-electron-app.mjs` ملفات Electron وRelay المجمعة إلى app directory قبل التغليف كي لا تُضمّن اعتماديات Expo. يضبط electron-builder `electronLanguages: ["ar", "en-US"]` و`compression: maximum`، مع بقاء موارد Chromium والمحركات والتراخيص. يستخدم NSIS حزمة 7-Zip/LZMA لا ZIP. يظل أمر البناء المحلي `--publish never` ولا يرفع Release.
+
+ملفات ومسؤوليات المرحلة: `desktop/main.cjs` يدير BrowserWindow/`WebContentsView`, Session الشبكة، IPC المحدود والـUpdater؛ ملفات `desktop/*preload*.cjs` تفصل APIs المسموحة على حسب سطح الواجهة، و`desktop/browser-shell.*` لشريط العنوان ولوحة الكاشف العائمة؛ `desktop/runtime/package.json` يعزل اعتماديات تشغيل Electron، و`scripts/prepare-electron-app.mjs` يجهز ملفات التطبيق المعبأ؛ `relay/downloads.ts` لاستخراج صيغ yt-dlp ووسائط MP3/M4A، و`relay/server.ts` لواجهة API محلية محمية؛ `lib/desktop-bridge.d.ts` وجسر التطبيق لأزرار المتصفح والدعم وفتح الملفات، و`lib/readable-text.tsx` لرفع وضوح النصوص الصغيرة؛ و`electron-builder.yml` لمصدر التحديث المحدد وتقليل locales وملفات debug وضغط مثبت v1.1.0.

@@ -66,6 +66,7 @@ Thumbs.db
 /binaries/
 /release/
 /desktop/relay-server.cjs
+/desktop/runtime/desktop/
 
 # Webdev artifacts (checkpoint zips, migrations, etc.)
 .webdev/

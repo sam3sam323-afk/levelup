@@ -7,8 +7,11 @@ import path from "node:path";
 import express, { type NextFunction, type Request, type Response } from "express";
 import QRCode from "qrcode";
 
-import { cancelDownload, createDownload, getDownloadDirectory, getEngineStatus, listDownloads, listLibraryFiles, onDownloadUpdate, shutdownDownloads } from "./downloads";
+import { cancelDownload, createDownload, getCompletedDownloadTargets, getDownloadDirectory, getEngineStatus, inspectVideoFormats, listDownloads, listLibraryFiles, onDownloadUpdate, qualityHeight, shutdownDownloads } from "./downloads";
 import type { DownloadKind } from "./downloads";
+import { assertSafeDownloadTarget } from "./url-safety";
+
+export { getCompletedDownloadTargets, getDownloadDirectory };
 
 const PORT = Number(process.env.NEXUS_PORT ?? 8787);
 const HOST = process.env.NEXUS_HOST ?? "0.0.0.0";
@@ -131,12 +134,23 @@ const requireToken = (req: Request, res: Response, next: NextFunction) => {
 
 app.get("/api/tools", requireToken, (_req, res) => res.json(getEngineStatus()));
 app.get("/api/downloads", requireToken, (_req, res) => res.json({ downloads: listDownloads() }));
-app.get("/api/library", requireToken, (_req, res) => res.json({ directory: getDownloadDirectory(), files: listLibraryFiles() }));
-app.post("/api/downloads", requireToken, (req, res) => {
-  const { url, kind, target, quality } = req.body ?? {};
+app.get("/api/library", requireToken, (_req, res) => res.json({ files: listLibraryFiles() }));
+app.post("/api/media/formats", requireToken, async (req, res) => {
+  const url = typeof req.body?.url === "string" ? req.body.url.trim() : "";
+  if (!url || url.length > 4096) return res.status(400).json({ error: "Provide a valid page or media URL." });
+  let parsed: URL;
+  try { parsed = new URL(url); } catch { return res.status(400).json({ error: "The link format is not valid." }); }
+  if (!["http:", "https:"].includes(parsed.protocol) || parsed.username || parsed.password) return res.status(400).json({ error: "Only HTTP/HTTPS links without embedded credentials are accepted." });
+  try { await assertSafeDownloadTarget(parsed, { allowLoopbackForTests: true }); }
+  catch (error) { return res.status(400).json({ error: error instanceof Error ? error.message : "This network destination is not allowed." }); }
+  try { res.json(await inspectVideoFormats(url)); }
+  catch (error) { res.status(422).json({ error: error instanceof Error ? error.message : "yt-dlp could not inspect this page." }); }
+});
+app.post("/api/downloads", requireToken, async (req, res) => {
+  const { url, kind, target, quality, audioFormat } = req.body ?? {};
   if (typeof url !== "string" || url.length > 4096) return res.status(400).json({ error: "Provide a valid video, file, or magnet URL." });
   const normalizedKind = kind as DownloadKind;
-  if (!["video", "file", "torrent"].includes(normalizedKind)) return res.status(400).json({ error: "Choose video, direct file, or torrent." });
+  if (!["video", "audio", "file", "torrent"].includes(normalizedKind)) return res.status(400).json({ error: "Choose video, audio, direct file, or torrent." });
   const routeTarget = target ?? "computer";
   if (routeTarget !== "computer" && routeTarget !== "phone") return res.status(400).json({ error: "Choose computer or phone as the download target." });
   if (routeTarget === "phone" && normalizedKind !== "file") return res.status(400).json({ error: "Direct phone downloads accept HTTP/HTTPS file links only." });
@@ -147,12 +161,16 @@ app.post("/api/downloads", requireToken, (req, res) => {
     let parsed: URL;
     try { parsed = new URL(url); } catch { return res.status(400).json({ error: "The link format is not valid." }); }
     if (!["http:", "https:"].includes(parsed.protocol) || parsed.username || parsed.password) return res.status(400).json({ error: "Only HTTP/HTTPS links without embedded credentials are accepted." });
+    try { await assertSafeDownloadTarget(parsed, { allowLoopbackForTests: true }); }
+    catch (error) { return res.status(400).json({ error: error instanceof Error ? error.message : "This network destination is not allowed." }); }
   }
   if (normalizedKind === "torrent" && !isMagnet && !/\.torrent(?:$|\?)/i.test(url)) return res.status(400).json({ error: "Torrent type requires a .torrent URL or a Magnet link." });
   if (routeTarget === "phone") return res.json({ target: "phone", directUrl: url });
   const chosenQuality = typeof quality === "string" ? quality : "1080p";
-  if (normalizedKind === "video" && chosenQuality !== "auto" && !/^(240|360|480|720|1080|1440|2160|4320)p?$|^[48]k$/i.test(chosenQuality)) return res.status(400).json({ error: "Choose one of 240p, 360p, 480p, 720p, 1080p, 1440p, 4K, or 8K." });
-  const download = createDownload({ url, kind: normalizedKind, quality: chosenQuality });
+  if (normalizedKind === "video" && chosenQuality !== "auto" && (!qualityHeight(chosenQuality) || (qualityHeight(chosenQuality) ?? 0) < 144 || (qualityHeight(chosenQuality) ?? 99999) > 4320)) return res.status(400).json({ error: "Choose a video height between 144p and 4320p, or auto." });
+  const chosenAudioFormat = typeof audioFormat === "string" ? audioFormat.toLowerCase() : "mp3";
+  if (normalizedKind === "audio" && !["mp3", "m4a"].includes(chosenAudioFormat)) return res.status(400).json({ error: "Audio-only format must be MP3 or M4A." });
+  const download = createDownload({ url, kind: normalizedKind, quality: chosenQuality, audioFormat: normalizedKind === "audio" ? chosenAudioFormat as "mp3" | "m4a" : undefined });
   res.status(202).json({ download });
 });
 

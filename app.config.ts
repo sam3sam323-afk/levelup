@@ -61,7 +61,7 @@ const publicRuntime = {
 const config: ExpoConfig = {
   name: env.appName,
   slug: env.appSlug,
-  version: "1.0.0",
+  version: "1.1.0",
   extra: publicRuntime,
   orientation: "portrait",
   icon: "./assets/images/nexus-official.png",

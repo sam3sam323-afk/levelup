@@ -1,6 +1,6 @@
 {
-  "name": "app-template",
-  "version": "1.0.0",
+  "name": "level-up-arena-nexus",
+  "version": "1.1.0",
   "private": true,
   "main": "expo-router/entry",
   "scripts": {
@@ -21,13 +21,14 @@
     "export:web": "expo export --platform web --output-dir web-dist",
     "desktop": "pnpm export:web && pnpm relay",
     "relay:bundle": "esbuild relay/server.ts --bundle --platform=node --format=cjs --target=node22 --outfile=desktop/relay-server.cjs",
+    "desktop:prepare": "node scripts/prepare-electron-app.mjs",
     "desktop:run": "pnpm export:web && pnpm relay:bundle && pnpm exec electron desktop/main.cjs",
     "binaries:fetch": "node scripts/fetch-windows-binaries.mjs",
     "binaries:verify": "node scripts/verify-windows-binaries.mjs",
     "binaries:smoke": "node scripts/smoke-windows-downloaders.mjs",
     "binaries:smoke:win": "cross-env NEXUS_SMOKE_WINDOWS=1 node scripts/smoke-windows-downloaders.mjs",
     "relay:e2e": "tsx scripts/smoke-relay-downloads.ts",
-    "desktop:build:win": "pnpm binaries:fetch && pnpm export:web && pnpm relay:bundle && pnpm binaries:verify && cross-env NODE_OPTIONS=--max-old-space-size=16384 pnpm exec electron-builder --win nsis --x64 --config electron-builder.yml --publish never"
+    "desktop:build:win": "pnpm binaries:fetch && pnpm export:web && pnpm relay:bundle && pnpm desktop:prepare && pnpm binaries:verify && cross-env NODE_OPTIONS=--max-old-space-size=16384 pnpm exec electron-builder --win nsis --x64 --config electron-builder.yml --publish never"
   },
   "dependencies": {
     "@expo/metro-runtime": "~57.0.16",
@@ -42,6 +43,7 @@
     "cookie": "^1.1.1",
     "dotenv": "^16.6.1",
     "drizzle-orm": "^0.44.7",
+    "electron-updater": "6.8.11",
     "expo": "~57.0.24",
     "expo-asset": "~57.0.18",
     "expo-audio": "~57.0.5",

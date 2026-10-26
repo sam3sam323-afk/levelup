@@ -1,19 +1,23 @@
 appId: com.leveluparena.nexus
 productName: LEVEL UP ARENA NEXUS
 asar: true
-publish: null
+compression: maximum
+electronVersion: 45.0.0
+electronLanguages:
+  - ar
+  - en-US
+includePdb: false
+publish:
+  provider: github
+  owner: sam3sam323-afk
+  repo: levelup
 directories:
+  app: desktop/runtime
   output: release/win
 files:
-  - desktop/main.cjs
-  - desktop/relay-server.cjs
-  - package.json
-  - assets/images/icon.ico
-  - '!**/*.map'
-extraMetadata:
-  name: level-up-arena-nexus
-  productName: LEVEL UP ARENA NEXUS
-  main: desktop/main.cjs
+  - "**/*"
+  - "!**/*.map"
+  - "!**/*.pdb"
 extraResources:
   - from: binaries/win-x64
     to: binaries/win-x64
@@ -47,3 +51,5 @@ nsis:
   installerHeaderIcon: assets/images/icon.ico
   uninstallerIcon: assets/images/icon.ico
   runAfterFinish: true
+  useZip: false
+  differentialPackage: true
