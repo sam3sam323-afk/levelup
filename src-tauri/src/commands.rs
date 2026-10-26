@@ -517,7 +517,7 @@ pub async fn browser_get_video_formats(
     session_token: String,
 ) -> Result<Vec<BrowserVideoFormat>, CommandError> {
     let (label, requested_url) = validate_browser_request(&window, &state, &url, &session_token)?;
-    let command = app.shell().sidecar("binaries/yt-dlp")
+    let command = app.shell().sidecar("yt-dlp")
         .map_err(|error| CommandError::manager(format!("cannot resolve yt-dlp sidecar: {error}")))?;
     let args = ["--dump-single-json", "--no-warnings", "--no-playlist", "--skip-download", "--no-progress", "--no-call-home", requested_url.as_str()];
     let (mut receiver, mut child) = command.args(args).spawn()
@@ -610,15 +610,15 @@ fn parse_download_dir(path: &str) -> Result<PathBuf, CommandError> {
 
 fn sidecar_name(engine: &EngineType) -> &'static str {
     match engine {
-        EngineType::YtDlp => "binaries/yt-dlp",
-        EngineType::Aria2c => "binaries/aria2c",
+        EngineType::YtDlp => "yt-dlp",
+        EngineType::Aria2c => "aria2c",
     }
 }
 
 fn sidecar_args(app: &AppHandle, task: &DownloadTask) -> Result<Vec<String>, CommandError> {
     let ffmpeg_dir = if matches!(&task.engine, EngineType::YtDlp) {
         let resource_dir = app.path().resource_dir().map_err(|error| CommandError::manager(error.to_string()))?;
-        Some(resource_dir.join("binaries"))
+        Some(resource_dir)
     } else {
         None
     };
