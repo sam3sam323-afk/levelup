@@ -1,3 +1,7 @@
+import { invoke as tauriInvoke, isTauri as isTauriApp } from "@tauri-apps/api/core";
+import { listen as tauriListen } from "@tauri-apps/api/event";
+import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
+
 export type TauriEngine = "yt-dlp" | "aria2c";
 export type DownloadQuality = "best" | "1080p" | "720p" | "480p" | "audio-320" | "audio-192" | "audio-128";
 
@@ -61,17 +65,16 @@ export type DownloadProgressEvent = {
 type Invoke = (command: string, args?: Record<string, unknown>) => Promise<unknown>;
 type Listen = (event: string, handler: (event: { payload: unknown }) => void) => Promise<() => void>;
 
-async function getTauriRuntime(): Promise<{ invoke: Invoke; listen: Listen } | null> {
-  if (!("__TAURI_INTERNALS__" in window)) return null;
-  const coreName = "@tauri-apps/api/core";
-  const eventName = "@tauri-apps/api/event";
-  const core = await import(/* @vite-ignore */ coreName) as { invoke: Invoke };
-  const events = await import(/* @vite-ignore */ eventName) as { listen: Listen };
-  return { invoke: core.invoke, listen: events.listen };
+function getTauriRuntime(): { invoke: Invoke; listen: Listen } | null {
+  if (!isTauriApp()) return null;
+  return {
+    invoke: tauriInvoke as Invoke,
+    listen: tauriListen as Listen,
+  };
 }
 
-export async function isTauriRuntime() {
-  return Boolean(await getTauriRuntime());
+export function isTauriRuntime(): boolean {
+  return isTauriApp();
 }
 
 export async function invokeTauri<T>(command: string, args?: Record<string, unknown>): Promise<T | null> {
@@ -96,7 +99,6 @@ export async function openBrowserWindow(rawUrl: string): Promise<boolean> {
   }
   const runtime = await getTauriRuntime();
   if (!runtime) return false;
-  const { WebviewWindow } = await import(/* @vite-ignore */ "@tauri-apps/api/webviewWindow");
   if (browserWindow) {
     await browserWindow.close().catch(() => undefined);
     browserWindow = null;

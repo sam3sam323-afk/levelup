@@ -480,7 +480,7 @@ export default function Home() {
   const [toast, setToast] = useState("");
   const [mobileNav, setMobileNav] = useState(false);
   const [theme, setTheme] = useState<"dark" | "light">("dark");
-  const [tauriMode, setTauriMode] = useState(false);
+  const [tauriMode, setTauriMode] = useState(() => isTauriRuntime());
   const [defaultDownloadDir, setDefaultDownloadDir] = useState("");
 
   useEffect(() => {
@@ -494,7 +494,7 @@ export default function Home() {
     let progressFrame: number | null = null;
     const cleanups: Array<() => void> = [];
     void (async () => {
-      const runtime = await isTauriRuntime();
+      const runtime = isTauriRuntime();
       if (!active) return;
       setTauriMode(runtime);
       if (!runtime) return;
@@ -563,8 +563,9 @@ export default function Home() {
       if (progressCleanup) cleanups.push(progressCleanup);
       const failedCleanup = await listenTauri<{ taskId: string; error?: string; playlistItem?: number }>("download://failed", failed);
       if (failedCleanup) cleanups.push(failedCleanup);
-    })().catch(() => {
-      if (active) setTauriMode(false);
+    })().catch((error: unknown) => {
+      console.error("[LEVEL UP NEXUS] Failed to initialize the Tauri desktop bridge", error);
+      if (active) setTauriMode(isTauriRuntime());
     });
     return () => {
       active = false;
@@ -707,7 +708,7 @@ export default function Home() {
               <div className="content-heading"><div><div className="eyebrow"><span className="eyebrow-line" /> {t.controlRoom}</div><h1>{activeNav === "downloads" ? t.downloads : t.overview}</h1><p>{activeNav === "downloads" ? t.queueSub : t.overviewSub}</p></div><div className="heading-actions"><AppButton icon={<Plus size={17} />} onClick={() => setModal("add")}>{t.newDownload}</AppButton></div></div>
               <section className="hero-card"><div className="hero-glow" /><div className="hero-copy"><div className="hero-chip"><span className="pulse-dot" /> {t.connected}</div><h2>{t.heroTitle}<br /><span>{t.heroTitleAccent}</span></h2><p>{t.inputPlaceholder}</p><div className="quick-add"><Link2 size={17} /><input placeholder={t.inputPlaceholder} onKeyDown={(event) => { if (event.key === "Enter" && event.currentTarget.value.trim()) addDownload(event.currentTarget.value.trim()); }} /><button onClick={() => setModal("add")}><Plus size={17} /> {t.newDownload}</button></div><div className="hero-meta"><span><Zap size={13} /> {t.routeVideo}</span><span><ShieldCheck size={13} /> {tauriMode ? t.liveMode : t.previewOnly}</span></div></div><div className="hero-art"><div className="orbit orbit-one" /><div className="orbit orbit-two" /><div className="hero-logo"><NexusMark size="large" /></div><div className="float-stat float-stat-top"><span>{t.queueHealth}</span><strong>{downloads.length ? t.live : "—"}</strong><div className="mini-bars"><i /><i /><i /><i /><i /><i /></div></div><div className="float-stat float-stat-bottom"><Activity size={13} /><span>{formatSpeed(totalSpeed)}</span><b>{t.live}</b></div></div></section>
 
-              <section className="stat-grid"><StatCard icon={<ArrowDownToLine />} label={t.activeDownloads} value={String(activeCount).padStart(2, "0")} hint={t.activeSub} color="cyan" /><StatCard icon={<CheckCircle2 />} label={t.completed} value={String(completedCount).padStart(2, "0")} hint={t.completedSub} color="purple" /><StatCard icon={<HardDrive />} label={t.totalStored} value={formatBytes(totalStored)} hint={t.totalStoredSub} color="pink" /><StatCard icon={<Gauge />} label={t.currentSpeed} value={formatSpeed(totalSpeed)} hint={t.previewOnly} color="amber" /></section>
+              <section className="stat-grid"><StatCard icon={<ArrowDownToLine />} label={t.activeDownloads} value={String(activeCount).padStart(2, "0")} hint={t.activeSub} color="cyan" /><StatCard icon={<CheckCircle2 />} label={t.completed} value={String(completedCount).padStart(2, "0")} hint={t.completedSub} color="purple" /><StatCard icon={<HardDrive />} label={t.totalStored} value={formatBytes(totalStored)} hint={t.totalStoredSub} color="pink" /><StatCard icon={<Gauge />} label={t.currentSpeed} value={formatSpeed(totalSpeed)} hint={tauriMode ? t.liveMode : t.previewOnly} color="amber" /></section>
 
               <section className="queue-panel panel"><div className="panel-heading"><div><div className="panel-title"><span className="live-dot" /> {t.queue}</div><p>{t.queueSub}</p></div><button className="text-button" onClick={() => { setActiveNav("downloads"); setFilter("all"); }}>{t.viewAll} <ArrowUpRight size={14} /></button></div><QueueToolbar language={language} search={search} setSearch={setSearch} filter={filter} setFilter={setFilter} sort={sort} setSort={setSort} />
                 <div className="queue-list">{visibleDownloads.slice(0, activeNav === "home" ? 4 : undefined).map((item) => <MemoLazyDownloadRow key={item.id} item={item} language={language} selected={selectedId === item.id} onSelect={() => setSelectedId(item.id)} onToggle={() => toggleState(item.id)} onRemove={() => removeItem(item.id)} />)}</div>{visibleDownloads.length === 0 ? <EmptyState language={language} /> : null}</section>
@@ -797,5 +798,5 @@ function BrowserView({ language }: { language: Language }) {
   return <div className="subpage"><div className="content-heading"><div><div className="eyebrow"><span className="eyebrow-line" /> {t.browserKicker}</div><h1>{t.browserTitle}</h1><p>{t.browserSub}</p></div><AppButton icon={<ArrowUpRight size={16} />} onClick={open}>{t.openExternal}</AppButton></div><div className="browser-window panel"><div className="browser-bar"><ArrowDownToLine size={15} /><input dir="ltr" value={url} onChange={(event) => setUrl(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void open(); }} aria-label={t.browserTitle} /><button onClick={open} aria-label={t.openExternal}><RefreshCw size={14} /></button></div><div className="browser-empty"><div className="browser-orb"><NexusMark size="medium" /></div><h2>{t.browserTitle}</h2><p>{t.browserSub}</p><div className="browser-actions"><AppButton icon={<Globe2Icon />} onClick={open}>{t.openExternal}</AppButton>{error ? <span className="browser-error">{error}</span> : null}</div></div></div></div>;
 }
 function Globe2Icon() { return <span className="browser-globe"><Wifi size={12} /></span>; }
-function UtilitiesView({ language }: { language: Language }) { const t = copy[language]; return <div className="subpage"><div className="content-heading"><div><div className="eyebrow"><span className="eyebrow-line" /> {t.toolkitKicker}</div><h1>{t.utilitiesTitle}</h1><p>{t.utilitiesSub}</p></div></div><div className="coming-soon panel"><Sparkles size={19} /><div><strong>{t.desktopRequired}</strong><span>{t.utilitiesSub}</span></div></div></div>; }
+function UtilitiesView({ language }: { language: Language }) { const t = copy[language]; return <div className="subpage"><div className="content-heading"><div><div className="eyebrow"><span className="eyebrow-line" /> {t.toolkitKicker}</div><h1>{t.utilitiesTitle}</h1><p>{t.utilitiesSub}</p></div></div><div className="coming-soon panel"><Sparkles size={19} /><div><strong>{t.ready}</strong><span>{t.utilitiesSub}</span></div></div></div>; }
 function LibraryView({ language, downloads }: { language: Language; downloads: DownloadItem[] }) { const t = copy[language]; return <div className="subpage"><div className="content-heading"><div><div className="eyebrow"><span className="eyebrow-line" /> {t.libraryKicker}</div><h1>{t.libraryTitle}</h1><p>{t.librarySub}</p></div></div><div className="library-grid">{downloads.filter((item) => item.state === "completed").map((item) => <div className="library-card" key={item.id}><div className={`file-icon ${item.accent}`}><CategoryIcon type={item.type} /></div><strong>{item.name}</strong><span>{item.size} · {item.type}</span></div>)}</div></div>; }

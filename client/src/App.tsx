@@ -17,9 +17,7 @@ function Router() {
 
 export default function App() {
   useEffect(() => {
-    void isTauriRuntime().then((runtime) => {
-      document.documentElement.dataset.nexusRuntime = runtime ? "tauri" : "browser";
-    });
+    document.documentElement.dataset.nexusRuntime = isTauriRuntime() ? "tauri" : "browser";
   }, []);
 
   return (
