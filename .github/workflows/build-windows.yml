@@ -52,7 +52,19 @@ jobs:
           $archive = Join-Path $downloadDir 'ffmpeg.zip'
           $extractDir = Join-Path $downloadDir 'extracted'
           New-Item -ItemType Directory -Force -Path $downloadDir, $extractDir | Out-Null
-          Invoke-WebRequest -Uri $url -OutFile $archive
+          $maxAttempts = 5
+          for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
+            try {
+              Invoke-WebRequest -Uri $url -OutFile $archive
+              break
+            } catch {
+              Remove-Item $archive -Force -ErrorAction SilentlyContinue
+              if ($attempt -eq $maxAttempts) { throw }
+              $delay = [Math]::Pow(2, $attempt)
+              Write-Host "FFmpeg download attempt $attempt failed; retrying in $delay seconds. $($_.Exception.Message)"
+              Start-Sleep -Seconds $delay
+            }
+          }
           $actual = (Get-FileHash -Path $archive -Algorithm SHA256).Hash.ToLowerInvariant()
           if ($actual -ne $expected) {
             throw "FFmpeg archive checksum mismatch. Expected $expected but got $actual"
