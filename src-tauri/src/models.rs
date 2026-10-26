@@ -158,4 +158,6 @@ pub struct DownloadProgressEvent {
     pub engine: EngineType,
     pub error: Option<String>,
     pub playlist_items: Vec<PlaylistItemProgress>,
+    pub playlist_current_index: Option<usize>,
+    pub playlist_total: Option<usize>,
 }
