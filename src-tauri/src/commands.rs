@@ -906,7 +906,7 @@ fn parse_yt_dlp_progress(line: &str) -> Option<(f64, u64, Option<u64>, u64, Opti
     let payload = line.strip_prefix("download:")?;
     let fields: Vec<&str> = payload.split('|').collect();
     if fields.len() < 9 { return None; }
-    let downloaded = fields[1].parse::<u64>().ok()?;
+    let downloaded = parse_optional_u64(fields[1]).unwrap_or(0);
     let total = parse_optional_u64(fields[2]).or_else(|| parse_optional_u64(fields[3]));
     let progress = total.map(|value| if value == 0 { 0.0 } else { downloaded as f64 * 100.0 / value as f64 }).unwrap_or(0.0);
     let item_progress = if fields[0] == "finished" { 100.0 } else { progress };
@@ -1272,6 +1272,15 @@ mod tests {
         assert_eq!(parsed.0, 50.0);
         assert_eq!(parsed.1, 1024);
         assert_eq!(parsed.5.as_deref(), Some("video.mp4"));
+    }
+
+    #[test]
+    fn accepts_yt_dlp_progress_while_byte_counts_are_unknown() {
+        let parsed = parse_yt_dlp_progress("download:downloading|NA|NA|NA|NA|NA|NA|NA|video.mp4").unwrap();
+        assert_eq!(parsed.0, 0.0);
+        assert_eq!(parsed.1, 0);
+        assert_eq!(parsed.5.as_deref(), Some("video.mp4"));
+        assert_eq!(parsed.8, super::DownloadState::Downloading);
     }
 
     #[test]

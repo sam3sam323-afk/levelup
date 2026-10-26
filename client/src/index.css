@@ -590,3 +590,8 @@ button:active, .app-button:active, .pair-button:active, .detail-actions button:a
 .download-celebration i { position: absolute; top: 47%; left: 50%; width: 6px; height: 10px; border-radius: 2px; background: hsl(var(--hue) 92% 66%); opacity: 0; box-shadow: 0 0 10px hsl(var(--hue) 100% 68% / .45); animation: confettiBurst 1.55s cubic-bezier(.12,.72,.23,1) both; animation-delay: 60ms; }
 @keyframes confettiBurst { 0% { opacity: 0; transform: translate(0,0) rotate(0) scale(.5); } 12% { opacity: .95; } 100% { opacity: 0; transform: translate(var(--x), var(--y)) rotate(160deg) scale(.85); } }
 @media (prefers-reduced-motion: reduce) { .stat-card, .clipboard-toast, .download-celebration i { animation-duration: .01ms !important; transition-duration: .01ms !important; } }
+
+.row-progress.is-indeterminate { overflow: hidden; }
+.row-progress.is-indeterminate .progress-fill { animation: downloadIndeterminate 1.05s ease-in-out infinite alternate; will-change: transform; }
+@keyframes downloadIndeterminate { from { transform: translateX(-32%); opacity: .68; } to { transform: translateX(205%); opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .row-progress.is-indeterminate .progress-fill { animation: none; transform: none; } }
