@@ -46,14 +46,14 @@ fn validate_url(url: &str) -> Result<(), CommandError> {
     let allowed = trimmed.starts_with("https://")
         || trimmed.starts_with("http://")
         || trimmed.starts_with("magnet:");
-    if !allowed || trimmed.contains('\0') || trimmed.starts_with("javascript:") || trimmed.starts_with("file:") {
+    if !allowed || trimmed.len() > 8192 || trimmed.chars().any(char::is_control) || trimmed.starts_with("javascript:") || trimmed.starts_with("file:") {
         return Err(CommandError::validation("unsupported or unsafe download URL"));
     }
     Ok(())
 }
 
 fn validate_download_dir(path: &str) -> Result<PathBuf, CommandError> {
-    if path.trim().is_empty() || path.contains('\0') {
+    if path.trim().is_empty() || path.len() > 4096 || path.chars().any(char::is_control) {
         return Err(CommandError::validation("download directory is required"));
     }
     let directory = PathBuf::from(path);

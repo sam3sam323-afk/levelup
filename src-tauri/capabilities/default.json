@@ -10,8 +10,7 @@
       "identifier": "shell:allow-spawn",
       "allow": [
         { "name": "binaries/yt-dlp", "sidecar": true, "args": true },
-        { "name": "binaries/aria2c", "sidecar": true, "args": true },
-        { "name": "binaries/ffmpeg", "sidecar": true, "args": true }
+        { "name": "binaries/aria2c", "sidecar": true, "args": true }
       ]
     }
   ]
