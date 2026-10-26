@@ -2,7 +2,6 @@
   const sessionToken = __NEXUS_SESSION_TOKEN__;
   const getInvoke = () => window.__TAURI__?.core?.invoke;
   if (window.top !== window || !/^https?:$/.test(window.location.protocol) || window.__NEXUS_BROWSER_INSTALLED__) return;
-  window.__NEXUS_BROWSER_INSTALLED__ = true;
   const supportedDomains = ["youtube.com", "youtu.be", "facebook.com", "fb.watch", "vimeo.com", "tiktok.com", "instagram.com", "dailymotion.com", "twitter.com", "x.com", "twitch.tv"];
   const mediaCaptureAllowed = () => supportedDomains.some((domain) => location.hostname === domain || location.hostname.endsWith(`.${domain}`));
 
@@ -37,7 +36,8 @@
   let saveTimer;
 
   function install() {
-    if (!document.documentElement || document.getElementById("nexus-browser-sniffer")) return;
+    if (!document.documentElement) return false;
+    if (document.getElementById("nexus-browser-sniffer")) { window.__NEXUS_BROWSER_INSTALLED__ = true; return true; }
     const darkStyle = document.createElement("style");
     darkStyle.dataset.nexusDark = "true";
     darkStyle.textContent = ":root,html,body{color-scheme:dark!important}";
@@ -223,6 +223,8 @@
     };
     window.setInterval(scheduleMediaScan, 1800);
     scanVideos();
+    window.__NEXUS_BROWSER_INSTALLED__ = true;
+    return true;
   }
 
   function formatBytes(bytes) {
@@ -359,9 +361,21 @@
     }
   }
 
+  let initAttempts = 0;
   const waitForDocument = () => {
-    if (document.documentElement) install();
-    else requestAnimationFrame(waitForDocument);
+    if (window.__NEXUS_BROWSER_INSTALLED__) return;
+    try {
+      if (install()) return;
+    } catch (error) {
+      console.warn("[LEVEL UP NEXUS] Browser injection will retry", error);
+      host?.remove();
+      host = undefined;
+      root = undefined;
+      window.__NEXUS_BROWSER_INSTALLED__ = false;
+    }
+    if (initAttempts++ < 40) setTimeout(waitForDocument, 250);
   };
+  document.addEventListener("DOMContentLoaded", waitForDocument, { once: true });
+  window.addEventListener("pageshow", waitForDocument, { once: true });
   waitForDocument();
 })();
