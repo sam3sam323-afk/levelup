@@ -763,7 +763,7 @@ export default function Home() {
     try {
       const task = await invokeTauri<TauriDownloadTask>("start_download", {
         url,
-        download_dir: requestedPath || defaultDownloadDir,
+        downloadDir: requestedPath || defaultDownloadDir,
         options: { connections: 16, audioOnly: isAudio, playlist, quality },
       });
       if (!task) throw new Error("Tauri runtime unavailable");
@@ -786,8 +786,8 @@ export default function Home() {
       const item = downloads.find((current) => current.id === id);
       if (!item) return;
       try {
-        if (item.state === "downloading") await invokeTauri("pause_download", { task_id: id });
-        else if (item.state === "paused") await invokeTauri("resume_download", { task_id: id });
+        if (item.state === "downloading") await invokeTauri("pause_download", { taskId: id });
+        else if (item.state === "paused") await invokeTauri("resume_download", { taskId: id });
       } catch {
         setToast(t.downloadError);
       }
@@ -799,7 +799,7 @@ export default function Home() {
   const removeItem = async (id: string) => {
     if (tauriMode) {
       try {
-        await invokeTauri("remove_download", { task_id: id });
+        await invokeTauri("remove_download", { taskId: id });
       } catch (error) {
         console.error("[LEVEL UP NEXUS] Could not remove download", error);
         setToast(t.downloadError);
@@ -849,7 +849,7 @@ export default function Home() {
   const cancelDownload = async (id: string) => {
     if (!tauriMode) { setToast(t.desktopRequired); return; }
     try {
-      const task = await invokeTauri<TauriDownloadTask>("cancel_download", { task_id: id });
+      const task = await invokeTauri<TauriDownloadTask>("cancel_download", { taskId: id });
       if (task) setDownloads((items) => items.map((item) => item.id === id ? taskToItem(task) : item));
       setToast(t.cancelled);
     } catch { setToast(t.downloadError); }
