@@ -51,6 +51,8 @@ import {
   openBrowserWindow,
   type DownloadProgressEvent,
   type DownloadTask as TauriDownloadTask,
+  type DownloadQuality,
+  type PlaylistItemProgress,
   type TauriEngine,
 } from "../lib/tauriBridge";
 
@@ -76,6 +78,9 @@ type DownloadItem = {
   state: DownloadState;
   accent: "cyan" | "purple" | "pink" | "amber";
   added: string;
+  playlistItems: PlaylistItemProgress[];
+  playlistCurrentIndex?: number;
+  playlistTotal?: number;
 };
 
 const copy = {
@@ -143,6 +148,19 @@ const copy = {
     saveTo: "Save to",
     savePlaceholder: "Downloads / Nexus",
     addToQueue: "Add to queue",
+    playlist: "Download full playlist",
+    playlistHint: "Download every item from a YouTube playlist",
+    routePlaylist: "yt-dlp · full playlist",
+    playlistProgress: "Playlist item progress",
+    item: "Item",
+    quality: "Quality",
+    qualityBest: "Best available",
+    quality1080: "Video · 1080p",
+    quality720: "Video · 720p",
+    quality480: "Video · 480p",
+    qualityAudio320: "Audio · MP3 320 Kbps",
+    qualityAudio192: "Audio · MP3 192 Kbps",
+    qualityAudio128: "Audio · MP3 128 Kbps",
     close: "Close",
     browserTitle: "WebView2 browser",
     browserSub: "Open a real WebView2 browser window for media discovery.",
@@ -235,6 +253,19 @@ const copy = {
     saveTo: "الحفظ في",
     savePlaceholder: "التنزيلات / نيكسوس",
     addToQueue: "إضافة للطابور",
+    playlist: "تنزيل قائمة التشغيل كاملة",
+    playlistHint: "تنزيل جميع عناصر قائمة تشغيل يوتيوب دفعة واحدة",
+    routePlaylist: "yt-dlp · قائمة تشغيل كاملة",
+    playlistProgress: "تقدم عناصر قائمة التشغيل",
+    item: "العنصر",
+    quality: "الجودة",
+    qualityBest: "أفضل جودة متاحة",
+    quality1080: "فيديو · 1080p",
+    quality720: "فيديو · 720p",
+    quality480: "فيديو · 480p",
+    qualityAudio320: "صوت · MP3 ‏320 Kbps",
+    qualityAudio192: "صوت · MP3 ‏192 Kbps",
+    qualityAudio128: "صوت · MP3 ‏128 Kbps",
     close: "إغلاق",
     browserTitle: "متصفح WebView2",
     browserSub: "افتح نافذة WebView2 حقيقية لاكتشاف الوسائط والتصفح.",
@@ -321,6 +352,9 @@ function taskToItem(task: TauriDownloadTask): DownloadItem {
     state: task.state === "completed" ? "completed" : task.state === "paused" ? "paused" : task.state === "failed" || task.state === "cancelled" ? "error" : "downloading",
     accent: accentForCategory(type),
     added: task.state === "completed" ? "Completed" : "Live",
+    playlistItems: task.playlistItems ?? [],
+    playlistCurrentIndex: task.playlistCurrentIndex,
+    playlistTotal: task.playlistTotal,
   };
 }
 
@@ -329,6 +363,15 @@ function routeForUrl(url: string, language: Language) {
   if (normalized.startsWith("magnet:")) return copy[language].routeMagnet;
   if (/\.(zip|rar|7z|tar|gz|iso|exe|msi|dmg)(\?|$)/i.test(normalized)) return copy[language].routeFile;
   return copy[language].routeVideo;
+}
+
+function isYoutubePlaylistUrl(url: string) {
+  try {
+    const parsed = new URL(url);
+    return /(^|\.)youtube\.com$/i.test(parsed.hostname) && parsed.searchParams.has("list");
+  } catch {
+    return false;
+  }
 }
 
 function iconForCategory(category: Category) {
@@ -375,21 +418,40 @@ function AppButton({ children, variant = "primary", onClick, icon, type = "butto
   );
 }
 
-function AddDownloadModal({ language, onClose, onAdd, defaultPath }: { language: Language; onClose: () => void; onAdd: (url: string, savePath: string) => void; defaultPath?: string }) {
+function AddDownloadModal({ language, onClose, onAdd, defaultPath }: { language: Language; onClose: () => void; onAdd: (url: string, savePath: string, playlist: boolean, quality: DownloadQuality) => void; defaultPath?: string }) {
   const t = copy[language];
   const [value, setValue] = useState("");
   const [savePath, setSavePath] = useState<string>(defaultPath || t.savePlaceholder);
-  const route = value.trim() ? routeForUrl(value, language) : t.routeVideo;
+  const [playlist, setPlaylist] = useState(false);
+  const [quality, setQuality] = useState<DownloadQuality>("best");
+  const route = playlist ? t.routePlaylist : value.trim() ? routeForUrl(value, language) : t.routeVideo;
   return (
     <div className="modal-backdrop" onMouseDown={onClose}>
-      <form className="modal-card add-card" onSubmit={(event) => { event.preventDefault(); if (value.trim()) onAdd(value.trim(), savePath); }} onMouseDown={(event) => event.stopPropagation()}>
+      <form className="modal-card add-card" onSubmit={(event) => { event.preventDefault(); if (value.trim()) onAdd(value.trim(), savePath, playlist, quality); }} onMouseDown={(event) => event.stopPropagation()}>
         <button type="button" className="modal-close" aria-label={t.close} onClick={onClose}><X size={18} /></button>
         <div className="modal-kicker"><Sparkles size={14} /> {t.liveMode}</div>
         <h2>{t.newDownload}</h2>
         <p>{t.inputPlaceholder}</p>
         <label className="field-label">{t.inputPlaceholder}</label>
-        <div className="field-with-icon"><Link2 size={16} /><input autoFocus value={value} onChange={(event) => setValue(event.target.value)} placeholder={t.inputPlaceholder} /></div>
+        <div className="field-with-icon"><Link2 size={16} /><input autoFocus value={value} onChange={(event) => { const nextValue = event.target.value; setValue(nextValue); setPlaylist(isYoutubePlaylistUrl(nextValue.trim())); }} placeholder={t.inputPlaceholder} /></div>
         <div className="route-preview"><span>{t.engine}</span><strong>{route}</strong></div>
+        <label className="playlist-option">
+          <input type="checkbox" checked={playlist} onChange={(event) => setPlaylist(event.target.checked)} />
+          <span><strong>{t.playlist}</strong><small>{t.playlistHint}</small></span>
+        </label>
+        <label className="field-label" htmlFor="download-quality">{t.quality}</label>
+        <div className="select-with-icon">
+          <Gauge size={16} />
+          <select id="download-quality" value={quality} onChange={(event) => setQuality(event.target.value as DownloadQuality)}>
+            <option value="best">{t.qualityBest}</option>
+            <option value="1080p">{t.quality1080}</option>
+            <option value="720p">{t.quality720}</option>
+            <option value="480p">{t.quality480}</option>
+            <option value="audio-320">{t.qualityAudio320}</option>
+            <option value="audio-192">{t.qualityAudio192}</option>
+            <option value="audio-128">{t.qualityAudio128}</option>
+          </select>
+        </div>
         <label className="field-label">{t.saveTo}</label>
         <div className="field-with-icon"><FolderOpen size={16} /><input value={savePath} onChange={(event) => setSavePath(event.target.value)} /></div>
         <div className="modal-actions"><AppButton variant="secondary" onClick={onClose}>{t.close}</AppButton><AppButton type="submit" icon={<Plus size={16} />}>{t.addToQueue}</AppButton></div>
@@ -472,8 +534,11 @@ export default function Home() {
               eta: formatEta(event.etaSeconds),
               state: event.state === "paused" ? "paused" : event.state === "failed" ? "error" : event.state === "completed" ? "completed" : "downloading",
               name: event.filename || current.name,
+              playlistItems: event.playlistItems ?? current.playlistItems,
+              playlistCurrentIndex: event.playlistCurrentIndex ?? current.playlistCurrentIndex,
+              playlistTotal: event.playlistTotal ?? current.playlistTotal,
             } satisfies DownloadItem;
-            const isSame = next.progress === current.progress && next.downloaded === current.downloaded && next.size === current.size && next.sizeBytes === current.sizeBytes && next.speed === current.speed && next.speedBytesPerSecond === current.speedBytesPerSecond && next.eta === current.eta && next.state === current.state && next.name === current.name;
+            const isSame = next.progress === current.progress && next.downloaded === current.downloaded && next.size === current.size && next.sizeBytes === current.sizeBytes && next.speed === current.speed && next.speedBytesPerSecond === current.speedBytesPerSecond && next.eta === current.eta && next.state === current.state && next.name === current.name && next.playlistItems === current.playlistItems;
             if (isSame) return current;
             changed = true;
             return next;
@@ -485,14 +550,18 @@ export default function Home() {
         pendingProgress.set(event.taskId, event);
         if (progressFrame === null) progressFrame = window.requestAnimationFrame(flushProgress);
       };
-      const failed = (event: { taskId: string; error?: string }) => setDownloads((items) => items.map((current) => current.id === event.taskId ? { ...current, state: "error", eta: event.error || "Failed" } : current));
+      const failed = (event: { taskId: string; error?: string; playlistItem?: number }) => setDownloads((items) => items.map((current) => {
+        if (current.id !== event.taskId) return current;
+        if (event.playlistItem) return { ...current, playlistItems: current.playlistItems.map((item) => item.index === event.playlistItem ? { ...item, state: "failed", speedBytesPerSecond: 0, etaSeconds: undefined } : item) };
+        return { ...current, state: "error", eta: event.error || "Failed" };
+      }));
       for (const eventName of ["download://started", "download://completed", "download://paused", "download://resumed"]) {
         const cleanup = await listenTauri<TauriDownloadTask>(eventName, upsertTask);
         if (cleanup) cleanups.push(cleanup);
       }
       const progressCleanup = await listenTauri<DownloadProgressEvent>("download://progress", updateProgress);
       if (progressCleanup) cleanups.push(progressCleanup);
-      const failedCleanup = await listenTauri<{ taskId: string; error?: string }>("download://failed", failed);
+      const failedCleanup = await listenTauri<{ taskId: string; error?: string; playlistItem?: number }>("download://failed", failed);
       if (failedCleanup) cleanups.push(failedCleanup);
     })().catch(() => {
       if (active) setTauriMode(false);
@@ -525,7 +594,7 @@ export default function Home() {
       .sort((a, b) => sort === "name" ? a.name.localeCompare(b.name) : sort === "size" ? Number.parseFloat(b.size) - Number.parseFloat(a.size) : Number(b.id.replace(/\D/g, "")) - Number(a.id.replace(/\D/g, "")));
   }, [downloads, filter, search, sort]);
 
-  const addDownload = async (url: string, requestedPath = defaultDownloadDir) => {
+  const addDownload = async (url: string, requestedPath = defaultDownloadDir, playlist = false, quality: DownloadQuality = "best") => {
     const isArchive = /\.(zip|rar|7z|tar|gz|iso|exe|msi|dmg)(\?|$)/i.test(url);
     const isAudio = /soundcloud|\.flac|\.mp3/i.test(url);
     const engine: TauriEngine = isArchive || url.startsWith("magnet:") ? "aria2c" : "yt-dlp";
@@ -538,7 +607,7 @@ export default function Home() {
         url,
         engine,
         download_dir: requestedPath || defaultDownloadDir,
-        options: { connections: 16, audioOnly: isAudio },
+        options: { connections: 16, audioOnly: isAudio, playlist, quality },
       });
       if (!task) throw new Error("Tauri runtime unavailable");
       setDownloads((items) => [taskToItem(task), ...items.filter((item) => item.id !== task.taskId)]);
@@ -647,7 +716,7 @@ export default function Home() {
           </div>
         </main>
 
-        <aside className="right-rail"><div className="rail-section"><div className="rail-title"><span>{t.details}</span><MoreHorizontal size={17} /></div>{selected ? <><div className={`detail-file-icon ${selected.accent}`}><CategoryIcon type={selected.type} /></div><h3 className="detail-name">{selected.name}</h3><span className="detail-url">{selected.url}</span><div className="detail-progress"><div className="detail-progress-head"><span>{t.progress}</span><strong>{selected.progress}%</strong></div><div className="progress-track"><span className={`progress-fill ${selected.accent}`} style={{ width: `${selected.progress}%` }} /></div></div><div className="detail-grid"><DetailMetric icon={<Gauge size={14} />} label={t.speed} value={selected.speed} /><DetailMetric icon={<Clock3 size={14} />} label={t.eta} value={selected.state === "completed" ? t.noTime : selected.eta} /><DetailMetric icon={<HardDrive size={14} />} label={t.size} value={selected.size} /><DetailMetric icon={<Zap size={14} />} label={t.engine} value={selected.engine} /></div><div className="detail-actions">{selected.state === "paused" ? <button onClick={() => toggleState(selected.id)}><Play size={15} /> {t.resumeDownload}</button> : null}<button onClick={copyLink}><Copy size={15} /> {t.copyLink}</button><button onClick={openSelectedFolder}><FolderOpen size={15} /> {t.openFolder}</button></div></> : <div className="rail-empty">{t.selectHint}</div>}</div><div className="rail-section rail-empty">{downloads.length ? t.storageSub : t.emptySub}</div></aside>
+        <aside className="right-rail"><div className="rail-section"><div className="rail-title"><span>{t.details}</span><MoreHorizontal size={17} /></div>{selected ? <><div className={`detail-file-icon ${selected.accent}`}><CategoryIcon type={selected.type} /></div><h3 className="detail-name">{selected.name}</h3><span className="detail-url">{selected.url}</span><div className="detail-progress"><div className="detail-progress-head"><span>{t.progress}</span><strong>{selected.progress}%</strong></div><div className="progress-track"><span className={`progress-fill ${selected.accent}`} style={{ width: `${selected.progress}%` }} /></div></div><div className="detail-grid"><DetailMetric icon={<Gauge size={14} />} label={t.speed} value={selected.speed} /><DetailMetric icon={<Clock3 size={14} />} label={t.eta} value={selected.state === "completed" ? t.noTime : selected.eta} /><DetailMetric icon={<HardDrive size={14} />} label={t.size} value={selected.size} /><DetailMetric icon={<Zap size={14} />} label={t.engine} value={selected.engine} /></div><PlaylistProgressList items={selected.playlistItems} language={language} currentIndex={selected.playlistCurrentIndex} taskState={selected.state} onToggle={() => toggleState(selected.id)} /><div className="detail-actions">{selected.state === "paused" ? <button onClick={() => toggleState(selected.id)}><Play size={15} /> {t.resumeDownload}</button> : null}<button onClick={copyLink}><Copy size={15} /> {t.copyLink}</button><button onClick={openSelectedFolder}><FolderOpen size={15} /> {t.openFolder}</button></div></> : <div className="rail-empty">{t.selectHint}</div>}</div><div className="rail-section rail-empty">{downloads.length ? t.storageSub : t.emptySub}</div></aside>
       </div>
 
       {modal === "add" ? <AddDownloadModal language={language} defaultPath={defaultDownloadDir} onClose={() => setModal(null)} onAdd={addDownload} /> : null}
@@ -704,6 +773,12 @@ const MemoDownloadRow = memo(DownloadRow, areDownloadRowPropsEqual);
 const MemoLazyDownloadRow = memo(LazyDownloadRow, areDownloadRowPropsEqual);
 
 function DetailMetric({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) { return <div className="detail-metric"><span>{icon} {label}</span><strong>{value}</strong></div>; }
+
+function PlaylistProgressList({ items, language, currentIndex, taskState, onToggle }: { items: PlaylistItemProgress[]; language: Language; currentIndex?: number; taskState: DownloadState; onToggle: () => void }) {
+  const t = copy[language];
+  if (!items.length) return null;
+  return <div className="playlist-progress"><div className="playlist-progress-heading"><span>{t.playlistProgress}</span><strong>{items.filter((item) => item.state === "completed").length}/{items.length}</strong></div><div className="playlist-progress-list">{items.map((item) => { const current = item.index === currentIndex; const paused = current && taskState === "paused"; return <div className="playlist-progress-item" key={item.index}><div className="playlist-item-line"><span>{item.index}. {item.title || `${t.item} ${item.index}`}</span><strong>{Math.round(item.progress)}%</strong></div><div className="playlist-item-track"><span style={{ width: `${item.progress}%` }} /></div><div className="playlist-item-status"><small>{item.state === "completed" ? t.done : paused ? t.paused : item.state === "failed" ? t.failed : item.speedBytesPerSecond ? formatSpeed(item.speedBytesPerSecond) : t.active}</small>{current && (taskState === "downloading" || taskState === "paused") ? <button type="button" onClick={onToggle} aria-label={paused ? t.resume : t.pause}>{paused ? <Play size={12} /> : <Pause size={12} />}</button> : null}</div></div>; })}</div></div>;
+}
 function CategoryIcon({ type }: { type: Category }) { const Icon = iconForCategory(type); return <Icon size={21} strokeWidth={1.7} />; }
 function CategoryLine({ icon, label, value, percent, color }: { icon: React.ReactNode; label: string; value: string; percent: number; color: string }) { return <div className="category-line"><div className="category-line-top"><span>{icon}{label}</span><strong>{value}</strong></div><div className="category-track"><i className={color} style={{ width: `${percent}%` }} /></div></div>; }
 

@@ -1,9 +1,24 @@
 export type TauriEngine = "yt-dlp" | "aria2c";
+export type DownloadQuality = "best" | "1080p" | "720p" | "480p" | "audio-320" | "audio-192" | "audio-128";
+
+export type PlaylistItemProgress = {
+  index: number;
+  total?: number;
+  title: string;
+  progress: number;
+  downloadedBytes: number;
+  totalBytes?: number;
+  speedBytesPerSecond: number;
+  etaSeconds?: number;
+  state: DownloadTask["state"];
+};
 
 export type DownloadOptions = {
   connections?: number;
   outputTemplate?: string;
   audioOnly?: boolean;
+  playlist?: boolean;
+  quality?: DownloadQuality;
 };
 
 export type DownloadTask = {
@@ -22,6 +37,9 @@ export type DownloadTask = {
   filename?: string;
   pid?: number;
   lastError?: string;
+  playlistItems: PlaylistItemProgress[];
+  playlistCurrentIndex?: number;
+  playlistTotal?: number;
 };
 
 export type DownloadProgressEvent = {
@@ -35,6 +53,9 @@ export type DownloadProgressEvent = {
   filename?: string;
   engine: TauriEngine;
   error?: string;
+  playlistItems: PlaylistItemProgress[];
+  playlistCurrentIndex?: number;
+  playlistTotal?: number;
 };
 
 type Invoke = (command: string, args?: Record<string, unknown>) => Promise<unknown>;

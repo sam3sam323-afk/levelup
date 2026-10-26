@@ -84,7 +84,7 @@ fn sidecar_args(app: &AppHandle, task: &DownloadTask) -> Result<Vec<String>, Com
                 "--progress-delta".into(),
                 "0.5".into(),
                 "--progress-template".into(),
-                "download:%(progress.status)s|%(progress.downloaded_bytes)s|%(progress.total_bytes)s|%(progress.total_bytes_estimate)s|%(progress.speed)s|%(progress.eta)s|%(progress.filename)s".into(),
+                "download:%(progress.status)s|%(progress.downloaded_bytes)s|%(progress.total_bytes)s|%(progress.total_bytes_estimate)s|%(progress.speed)s|%(progress.eta)s|%(playlist_index)s|%(playlist_count)s|%(progress.filename)s".into(),
                 "--continue".into(),
                 "--ffmpeg-location".into(),
                 ffmpeg_dir,
@@ -93,7 +93,22 @@ fn sidecar_args(app: &AppHandle, task: &DownloadTask) -> Result<Vec<String>, Com
                 "-o".into(),
                 "%(title)s.%(ext)s".into(),
             ];
-            if task.options.audio_only.unwrap_or(false) {
+            args.push(if task.options.playlist.unwrap_or(false) { "--yes-playlist".into() } else { "--no-playlist".into() });
+            if task.options.playlist.unwrap_or(false) {
+                args.push("--playlist-items".into());
+                args.push(task.playlist_current_index.unwrap_or(1).to_string());
+            }
+            match task.options.quality.as_deref().unwrap_or("best") {
+                "best" => {}
+                "1080p" => args.extend(["-f".into(), "bv*[height<=1080]+ba/b[height<=1080]".into()]),
+                "720p" => args.extend(["-f".into(), "bv*[height<=720]+ba/b[height<=720]".into()]),
+                "480p" => args.extend(["-f".into(), "bv*[height<=480]+ba/b[height<=480]".into()]),
+                "audio-320" => args.extend(["-x".into(), "--audio-format".into(), "mp3".into(), "--audio-quality".into(), "320K".into()]),
+                "audio-192" => args.extend(["-x".into(), "--audio-format".into(), "mp3".into(), "--audio-quality".into(), "192K".into()]),
+                "audio-128" => args.extend(["-x".into(), "--audio-format".into(), "mp3".into(), "--audio-quality".into(), "128K".into()]),
+                _ => return Err(CommandError::validation("unsupported media quality")),
+            }
+            if task.options.audio_only.unwrap_or(false) && !task.options.quality.as_deref().unwrap_or("best").starts_with("audio-") {
                 args.push("-x".into());
             }
             args.push(task.url.clone());
@@ -148,9 +163,9 @@ fn spawn_task(
             match event {
                 CommandEvent::Stdout(bytes) => {
                     let line = String::from_utf8_lossy(&bytes).trim().to_string();
-                    if let Some((progress, downloaded, total, speed, eta, filename)) = parse_progress(&task_engine, &line) {
+                    if let Some((progress, downloaded, total, speed, eta, filename, playlist_index, playlist_total, playlist_state)) = parse_progress(&task_engine, &line) {
                         if last_progress_emit.elapsed() >= Duration::from_millis(250) || progress >= 100.0 {
-                            if let Ok(updated) = downloads_for_task.update_progress(&task_id, progress, downloaded, total, speed, eta, filename) {
+                            if let Ok(updated) = downloads_for_task.update_progress(&task_id, progress, downloaded, total, speed, eta, filename, playlist_index, playlist_total, playlist_state) {
                                 let payload = DownloadProgressEvent {
                                     task_id: updated.task_id,
                                     state: updated.state,
@@ -162,6 +177,9 @@ fn spawn_task(
                                     filename: updated.filename,
                                     engine: updated.engine,
                                     error: updated.last_error,
+                                    playlist_items: updated.playlist_items,
+                                    playlist_current_index: updated.playlist_current_index,
+                                    playlist_total: updated.playlist_total,
                                 };
                                 let _ = app_handle.emit(events::DOWNLOAD_PROGRESS, payload);
                                 let _ = persist_tasks(&app_handle, &downloads_for_task);
@@ -179,9 +197,17 @@ fn spawn_task(
                     }
                 }
                 CommandEvent::Error(error) => {
-                    let _ = downloads_for_task.transition(&task_id, DownloadState::Failed);
-                    let _ = persist_tasks(&app_handle, &downloads_for_task);
-                    let _ = app_handle.emit(events::DOWNLOAD_FAILED, serde_json::json!({ "taskId": task_id, "error": error }));
+                    if let Ok(current) = downloads_for_task.get(&task_id) {
+                        if current.options.playlist.unwrap_or(false) {
+                            let failed = downloads_for_task.mark_playlist_item_failed(&task_id, error.clone()).ok();
+                            let _ = persist_tasks(&app_handle, &downloads_for_task);
+                            let _ = app_handle.emit(events::DOWNLOAD_FAILED, serde_json::json!({ "taskId": task_id, "error": error, "playlistItem": failed.and_then(|task| task.playlist_current_index) }));
+                        } else {
+                            let _ = downloads_for_task.transition(&task_id, DownloadState::Failed);
+                            let _ = persist_tasks(&app_handle, &downloads_for_task);
+                            let _ = app_handle.emit(events::DOWNLOAD_FAILED, serde_json::json!({ "taskId": task_id, "error": error }));
+                        }
+                    }
                 }
                 _ => {}
             }
@@ -189,7 +215,24 @@ fn spawn_task(
         let _ = processes_for_task.remove(&task_id);
         if let Ok(current) = downloads_for_task.get(&task_id) {
             if !matches!(current.state, DownloadState::Paused | DownloadState::Cancelled | DownloadState::Failed) {
-                if let Ok(completed) = downloads_for_task.transition(&task_id, DownloadState::Completed) {
+                let next_playlist_index = if current.options.playlist.unwrap_or(false) {
+                    match (current.playlist_current_index, current.playlist_total) {
+                        (Some(index), Some(total)) if index < total => Some(index + 1),
+                        _ => None,
+                    }
+                } else {
+                    None
+                };
+                if let Some(next_index) = next_playlist_index {
+                    if let Ok(queued) = downloads_for_task.transition(&task_id, DownloadState::Queued) {
+                        let _ = downloads_for_task.set_playlist_cursor(&task_id, next_index);
+                        let queued = downloads_for_task.get(&task_id).unwrap_or(queued);
+                        let _ = persist_tasks(&app_handle, &downloads_for_task);
+                        if let Err(error) = spawn_task(app_handle.clone(), downloads_for_task.clone(), processes_for_task.clone(), queued) {
+                            let _ = app_handle.emit(events::DOWNLOAD_FAILED, serde_json::json!({ "taskId": task_id, "error": error.message }));
+                        }
+                    }
+                } else if let Ok(completed) = downloads_for_task.transition(&task_id, DownloadState::Completed) {
                     let _ = persist_tasks(&app_handle, &downloads_for_task);
                     let _ = app_handle.emit(events::DOWNLOAD_COMPLETED, completed);
                 }
@@ -219,30 +262,34 @@ pub fn start_download(
     spawn_task(app, state.downloads.clone(), state.processes.clone(), task)
 }
 
-fn parse_progress(engine: &EngineType, line: &str) -> Option<(f64, u64, Option<u64>, u64, Option<u64>, Option<String>)> {
+fn parse_progress(engine: &EngineType, line: &str) -> Option<(f64, u64, Option<u64>, u64, Option<u64>, Option<String>, Option<usize>, Option<usize>, DownloadState)> {
     match engine {
         EngineType::YtDlp => parse_yt_dlp_progress(line),
         EngineType::Aria2c => parse_aria2c_progress(line),
     }
 }
 
-fn parse_yt_dlp_progress(line: &str) -> Option<(f64, u64, Option<u64>, u64, Option<u64>, Option<String>)> {
+fn parse_yt_dlp_progress(line: &str) -> Option<(f64, u64, Option<u64>, u64, Option<u64>, Option<String>, Option<usize>, Option<usize>, DownloadState)> {
     let payload = line.strip_prefix("download:")?;
     let fields: Vec<&str> = payload.split('|').collect();
-    if fields.len() < 7 { return None; }
+    if fields.len() < 9 { return None; }
     let downloaded = fields[1].parse::<u64>().ok()?;
     let total = parse_optional_u64(fields[2]).or_else(|| parse_optional_u64(fields[3]));
     let progress = total.map(|value| if value == 0 { 0.0 } else { downloaded as f64 * 100.0 / value as f64 }).unwrap_or(0.0);
-    Some((if fields[0] == "finished" { 100.0 } else { progress }, downloaded, total, parse_rate(fields[4]), parse_eta(fields[5]), Some(fields[6].to_string()).filter(|value| !value.is_empty() && *value != "NA")))
+    let item_progress = if fields[0] == "finished" { 100.0 } else { progress };
+    let playlist_index = fields[6].parse::<usize>().ok();
+    let playlist_total = fields[7].parse::<usize>().ok();
+    let filename = Some(fields[8..].join("|")).filter(|value| !value.is_empty() && *value != "NA");
+    Some((item_progress, downloaded, total, parse_rate(fields[4]), parse_eta(fields[5]), filename, playlist_index, playlist_total, if fields[0] == "finished" { DownloadState::Completed } else { DownloadState::Downloading }))
 }
 
-fn parse_aria2c_progress(line: &str) -> Option<(f64, u64, Option<u64>, u64, Option<u64>, Option<String>)> {
+fn parse_aria2c_progress(line: &str) -> Option<(f64, u64, Option<u64>, u64, Option<u64>, Option<String>, Option<usize>, Option<usize>, DownloadState)> {
     let percent_end = line.find("%)")?;
     let open = line[..percent_end].rfind('(')?;
     let progress = line[open + 1..percent_end].parse::<f64>().ok()?;
     let speed = line.split("DL:").nth(1).and_then(|value| value.split_whitespace().next()).map(parse_rate).unwrap_or(0);
     let eta = line.split("ETA:").nth(1).and_then(|value| value.split(|character: char| character == ']' || character.is_whitespace()).next()).and_then(parse_eta);
-    Some((progress, 0, None, speed, eta, None))
+    Some((progress, 0, None, speed, eta, None, None, None, DownloadState::Downloading))
 }
 
 fn parse_optional_u64(value: &str) -> Option<u64> {
