@@ -261,3 +261,27 @@ button:active, .app-button:active, .pair-button:active, .detail-actions button:a
 .download-row--placeholder > span:last-child { width: 46px; height: 9px; border-radius: 99px; background: rgba(137, 150, 207, .12); }
 @keyframes nexusShimmer { 0% { background-position: 100% 0; opacity: .55; } 50% { background-position: 0 0; opacity: 1; } 100% { background-position: -100% 0; opacity: .55; } }
 @media (prefers-reduced-motion: reduce) { .download-row--placeholder > span:first-child { animation: none; } }
+
+
+/* Arabic RTL: use logical alignment while keeping URLs, paths and engine output LTR. */
+.nexus-app[dir="rtl"] .sidebar { border-right: 0; border-left: 1px solid var(--line); }
+.nexus-app[dir="rtl"] .nav-item.active { box-shadow: inset -2px 0 0 var(--cyan); }
+.nexus-app[dir="rtl"] .nav-item b { margin-left: 0; margin-right: auto; }
+.nexus-app[dir="rtl"] .signature { text-align: right; }
+.nexus-app[dir="rtl"] .float-stat-top { right: auto; left: 26px; }
+.nexus-app[dir="rtl"] .float-stat-bottom { right: auto; left: 25px; }
+.nexus-app[dir="rtl"] .hero-art { right: auto; left: 0; }
+.nexus-app[dir="rtl"] .hero-logo, .nexus-app[dir="rtl"] .orbit { left: 46%; }
+.nexus-app[dir="rtl"] .download-meta, .nexus-app[dir="rtl"] .row-bottom, .nexus-app[dir="rtl"] .detail-url, .nexus-app[dir="rtl"] .route-preview strong { direction: ltr; text-align: right; }
+.nexus-app[dir="rtl"] .download-row { direction: rtl; }
+.nexus-app[dir="rtl"] .download-speed { text-align: left; }
+.nexus-app[dir="rtl"] .row-actions { margin-left: 0; margin-right: auto; }
+.nexus-app[dir="rtl"] .search-field input, .nexus-app[dir="rtl"] .quick-add input { text-align: right; }
+.nexus-app[dir="rtl"] .browser-bar input { direction: ltr; text-align: left; }
+.browser-bar input { min-width: 0; flex: 1; border: 0; outline: 0; background: transparent; color: inherit; font-size: 10px; }
+.browser-bar button { display: grid; place-items: center; background: transparent; color: var(--muted); }
+.browser-error { color: var(--pink); font-size: 10px; }
+@media (max-width: 760px) {
+  .nexus-app[dir="rtl"] .sidebar { left: auto; right: 0; box-shadow: -15px 0 45px rgba(0,0,0,.45); }
+  .nexus-app[dir="rtl"] .mobile-top button:last-child { margin-left: 0; margin-right: auto; }
+}

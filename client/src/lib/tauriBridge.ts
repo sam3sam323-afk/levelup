@@ -64,3 +64,36 @@ export async function listenTauri<T>(event: string, handler: (payload: T) => voi
   if (!runtime) return null;
   return runtime.listen(event, (received) => handler(received.payload as T));
 }
+
+
+let browserWindow: { close: () => Promise<void> } | null = null;
+
+export async function openBrowserWindow(rawUrl: string): Promise<boolean> {
+  const url = rawUrl.trim();
+  if (!/^https?:\/\//i.test(url) || /[\u0000-\u001f\u007f]/.test(url) || url.length > 8192) {
+    throw new Error("Only valid http(s) URLs are allowed");
+  }
+  const runtime = await getTauriRuntime();
+  if (!runtime) return false;
+  const { WebviewWindow } = await import(/* @vite-ignore */ "@tauri-apps/api/webviewWindow");
+  if (browserWindow) {
+    await browserWindow.close().catch(() => undefined);
+    browserWindow = null;
+  }
+  const child = new WebviewWindow("nexus-browser", {
+    url,
+    title: "LEVEL UP NEXUS — Browser",
+    width: 1280,
+    height: 820,
+    minWidth: 800,
+    minHeight: 560,
+    resizable: true,
+    center: true,
+  });
+  browserWindow = child;
+  await new Promise<void>((resolve, reject) => {
+    child.once("tauri://created", () => resolve());
+    child.once("tauri://error", (event) => reject(event));
+  });
+  return true;
+}

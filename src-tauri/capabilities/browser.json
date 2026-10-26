@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "browser-window-isolated",
+  "description": "The external browser WebView receives no Tauri, Store, Shell, or application command permissions.",
+  "windows": ["nexus-browser"],
+  "permissions": []
+}
