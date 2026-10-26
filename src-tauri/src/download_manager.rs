@@ -8,6 +8,20 @@ pub struct DownloadManager {
 }
 
 impl DownloadManager {
+    pub fn restore(&self, mut restored: Vec<DownloadTask>) -> Result<(), String> {
+        let mut tasks = self.tasks.lock().map_err(|_| "download manager lock poisoned".to_string())?;
+        for task in &mut restored {
+            if matches!(task.state, DownloadState::Starting | DownloadState::Downloading) {
+                task.state = DownloadState::Paused;
+                task.speed_bytes_per_second = 0;
+                task.eta_seconds = None;
+                task.last_error = Some("Paused because the application was closed".to_string());
+            }
+        }
+        tasks.extend(restored.into_iter().map(|task| (task.task_id.clone(), task)));
+        Ok(())
+    }
+
     pub fn insert(&self, task: DownloadTask) -> Result<DownloadTask, String> {
         let mut tasks = self.tasks.lock().map_err(|_| "download manager lock poisoned".to_string())?;
         if tasks.contains_key(&task.task_id) {
@@ -35,6 +49,7 @@ impl DownloadManager {
             (DownloadState::Queued, DownloadState::Starting)
                 | (DownloadState::Starting, DownloadState::Downloading)
                 | (DownloadState::Downloading, DownloadState::Paused)
+                | (DownloadState::Paused, DownloadState::Starting)
                 | (DownloadState::Paused, DownloadState::Downloading)
                 | (DownloadState::Downloading, DownloadState::Completed)
                 | (DownloadState::Downloading, DownloadState::Cancelled)

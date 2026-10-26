@@ -47,11 +47,12 @@ Tauri يطابقها مع الملفات ذات لاحقة target triple.
 ## ما لم ينفذ بعد
 
 - تشغيل aria2c عبر JSON-RPC.
-- إعادة تشغيل yt-dlp تلقائيًا عند `resume` مع حفظ الجلسة.
 - اختبار `cargo check` و`tauri build` على Windows x64.
 
 ## التشغيل المضاف في هذه المرحلة
 
 يتم تشغيل `yt-dlp` و`aria2c` من Rust عبر `tauri-plugin-shell`، مع قراءة stdout/stderr في مهمة خلفية غير حاجبة. يستخدم yt-dlp `--progress-template` ثابتًا، بينما يلتقط aria2c النسبة والسرعة وETA من console readout مؤقتًا إلى أن نضيف JSON-RPC في المرحلة التالية.
 
-`pause` يوقف العملية الحالية ويحافظ على الملف الجزئي، و`cancel` ينهي العملية. أما `resume` فيُرجع خطأ واضحًا حاليًا بدل أن يدّعي استئنافًا غير مكتمل؛ سيتم ربطه بإعادة spawn مع `--continue` وملف session في المرحلة التالية.
+`pause` يوقف العملية الحالية ويحافظ على الملف الجزئي، و`cancel` ينهي العملية. `resume` يعيد تشغيل الـSidecar بنفس خيارات المهمة مع `--continue`، لذلك يستطيع yt-dlp وaria2c متابعة الملف الجزئي.
+
+يستخدم التطبيق `tauri-plugin-store` لحفظ قائمة المهام وخياراتها في `level-up-nexus.json`. عند الإقلاع تعاد المهام التي كانت `starting` أو `downloading` إلى `paused`، ثم يمكن للمستخدم استئنافها يدويًا من الواجهة.

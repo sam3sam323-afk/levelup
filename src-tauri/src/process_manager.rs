@@ -19,7 +19,7 @@ impl ProcessManager {
 
     pub fn kill(&self, task_id: &str) -> Result<(), String> {
         let mut children = self.children.lock().map_err(|_| "process manager lock poisoned".to_string())?;
-        let child = children.get_mut(task_id).ok_or_else(|| "process not found".to_string())?;
+        let mut child = children.remove(task_id).ok_or_else(|| "process not found".to_string())?;
         child.kill().map_err(|error| error.to_string())
     }
 

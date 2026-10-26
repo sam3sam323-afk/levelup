@@ -10,6 +10,7 @@ export type DownloadTask = {
   taskId: string;
   url: string;
   engine: TauriEngine;
+  options?: DownloadOptions;
   downloadDir: string;
   outputPath?: string;
   state: "queued" | "starting" | "downloading" | "paused" | "completed" | "cancelled" | "failed";

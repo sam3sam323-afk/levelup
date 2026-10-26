@@ -573,7 +573,7 @@ export default function Home() {
           url,
           engine,
           download_dir: requestedPath || defaultDownloadDir,
-          options: { connections: 16, audio_only: isAudio },
+          options: { connections: 16, audioOnly: isAudio },
         });
         if (!task) throw new Error("Tauri runtime unavailable");
         setDownloads((items) => [taskToItem(task), ...items.filter((item) => item.id !== task.taskId)]);
@@ -616,7 +616,7 @@ export default function Home() {
         if (item.state === "downloading") await invokeTauri("pause_download", { task_id: id });
         else if (item.state === "paused") await invokeTauri("resume_download", { task_id: id });
       } catch {
-        setToast("Resume is not available until task persistence is enabled");
+        setToast("Unable to resume this download");
       }
       return;
     }

@@ -24,6 +24,7 @@ pub enum DownloadState {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct DownloadOptions {
     pub connections: Option<u8>,
     pub output_template: Option<String>,
@@ -41,10 +42,12 @@ impl Default for DownloadOptions {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct DownloadTask {
     pub task_id: String,
     pub url: String,
     pub engine: EngineType,
+    pub options: DownloadOptions,
     pub download_dir: PathBuf,
     pub output_path: Option<PathBuf>,
     pub state: DownloadState,
@@ -61,12 +64,13 @@ pub struct DownloadTask {
 }
 
 impl DownloadTask {
-    pub fn queued(url: String, engine: EngineType, download_dir: PathBuf) -> Self {
+    pub fn queued(url: String, engine: EngineType, download_dir: PathBuf, options: DownloadOptions) -> Self {
         let now = format!("{:?}", std::time::SystemTime::now());
         Self {
             task_id: format!("nexus-{}", Uuid::new_v4()),
             url,
             engine,
+            options,
             download_dir,
             output_path: None,
             state: DownloadState::Queued,
@@ -109,6 +113,7 @@ pub struct SystemDrive {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct DownloadProgressEvent {
     pub task_id: String,
     pub state: DownloadState,

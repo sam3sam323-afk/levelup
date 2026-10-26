@@ -10,14 +10,27 @@ use commands::{
     open_file_location, pause_download, resume_download, start_download, AppState,
 };
 use download_manager::DownloadManager;
+use models::DownloadTask;
+use tauri::Manager;
+use tauri_plugin_store::StoreExt;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_store::Builder::default().build())
         .manage(AppState {
             downloads: DownloadManager::default(),
             processes: process_manager::ProcessManager::default(),
+        })
+        .setup(|app| {
+            let store = app.store("level-up-nexus.json")?;
+            if let Some(value) = store.get("downloads") {
+                if let Ok(tasks) = serde_json::from_value::<Vec<DownloadTask>>(value) {
+                    let _ = app.state::<AppState>().downloads.restore(tasks);
+                }
+            }
+            Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             start_download,
