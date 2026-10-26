@@ -39,6 +39,9 @@
   },
   "permissions": [
     "allow-browser-get-video-formats",
-    "allow-browser-start-download"
+    "allow-browser-start-download",
+    "allow-browser-list-tabs",
+    "allow-browser-open-tab",
+    "allow-browser-switch-tab"
   ]
 }

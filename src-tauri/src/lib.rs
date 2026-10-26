@@ -10,6 +10,7 @@ use commands::{
     cancel_download, get_default_download_dir, get_download, get_engine_status, get_system_drives, list_downloads, remove_download,
     open_file_location, open_browser_window, browser_start_download, browser_get_video_formats, browser_save_tab,
     list_browser_tabs, restore_browser_tabs, focus_browser_tab, close_browser_tab,
+    browser_list_tabs, browser_open_tab, browser_switch_tab,
     pause_download, resume_download, start_download, AppState,
 };
 use download_manager::DownloadManager;
@@ -66,6 +67,9 @@ pub fn run() {
             browser_save_tab,
             browser_get_video_formats,
             browser_start_download,
+            browser_list_tabs,
+            browser_open_tab,
+            browser_switch_tab,
         ])
         .build(tauri::generate_context!())
         .expect("error while building LEVEL UP NEXUS")

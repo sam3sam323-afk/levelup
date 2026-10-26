@@ -8,8 +8,8 @@
 
   const isArabic = () => /^ar/i.test(document.documentElement?.lang || navigator.language || "");
   const words = () => isArabic()
-    ? { address: "ابحث أو أدخل رابطًا", back: "رجوع", forward: "تقدّم", refresh: "تحديث", mute: "كتم الصوت", unmute: "إلغاء كتم الصوت", discovered: "فاحص الوسائط · عرض الجودات", choose: "الجودات المتاحة فعليًا", loadingFormats: "جارٍ فحص الصيغ من yt-dlp…", noFormats: "لم يعثر yt-dlp على صيغ قابلة للتنزيل", working: "جارٍ بدء التنزيل…", queued: "أُضيف التنزيل إلى الطابور", unavailable: "تعذّر بدء التنزيل", desktop: "ميزة التنزيل تتطلب تطبيق سطح المكتب", dark: "الوضع الداكن مفعل" }
-    : { address: "Search or enter a URL", back: "Back", forward: "Forward", refresh: "Refresh", mute: "Mute", unmute: "Unmute", discovered: "NEXUS media · show formats", choose: "Available formats", loadingFormats: "Inspecting formats with yt-dlp…", noFormats: "yt-dlp found no downloadable formats", working: "Starting download…", queued: "Download added to queue", unavailable: "Could not start download", desktop: "Downloads require the desktop app", dark: "Dark mode is on" };
+    ? { address: "ابحث أو أدخل رابطًا", back: "رجوع", forward: "تقدّم", refresh: "تحديث", mute: "كتم الصوت", unmute: "إلغاء كتم الصوت", discovered: "فاحص الوسائط · عرض الجودات", choose: "الجودات المتاحة فعليًا", loadingFormats: "جارٍ فحص الصيغ من yt-dlp…", noFormats: "لم يعثر yt-dlp على صيغ قابلة للتنزيل", working: "جارٍ بدء التنزيل…", queued: "أُضيف التنزيل إلى الطابور", unavailable: "تعذّر بدء التنزيل", desktop: "ميزة التنزيل تتطلب تطبيق سطح المكتب", dark: "الوضع الداكن مفعل", newTab: "تبويب جديد", tab: "تبويب" }
+    : { address: "Search or enter a URL", back: "Back", forward: "Forward", refresh: "Refresh", mute: "Mute", unmute: "Unmute", discovered: "NEXUS media · show formats", choose: "Available formats", loadingFormats: "Inspecting formats with yt-dlp…", noFormats: "yt-dlp found no downloadable formats", working: "Starting download…", queued: "Download added to queue", unavailable: "Could not start download", desktop: "Downloads require the desktop app", dark: "Dark mode is on", newTab: "New tab", tab: "Tab" };
   const I = {
     back: '<svg viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></svg>',
     forward: '<svg viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg>',
@@ -27,6 +27,7 @@
   let status;
   let urlInput;
   let formatList;
+  let tabList;
   let videoFound = false;
   let muted = false;
   let loadTimer;
@@ -58,6 +59,7 @@
           <button class="nexus-btn" data-action="mute" title="${words().mute}" aria-label="${words().mute}">${I.mute}</button>
           <span class="nexus-dark">${words().dark}</span>
         </div>
+        <div class="nexus-tabs" role="tablist" aria-label="Browser tabs"><div class="nexus-tab-list"></div><button type="button" class="nexus-new-tab" data-action="new-tab" title="${words().newTab}" aria-label="${words().newTab}">+</button></div>
         <div class="nexus-progress loading"><i></i></div>
       </div>
       <div class="nexus-media">
@@ -69,7 +71,7 @@
         <button class="nexus-pill" aria-haspopup="dialog" aria-expanded="false"><span class="nexus-dot"></span><span class="nexus-pill-icon">📥</span><span>${words().discovered}</span></button>
       </div>`;
     const style = document.createElement("style");
-    style.textContent = styleText;
+    style.textContent = styleText + `.nexus-tabs{height:38px;display:flex;align-items:center;gap:7px;padding:0 10px 7px;pointer-events:auto}.nexus-tab-list{display:flex;align-items:center;gap:5px;min-width:0;flex:1;overflow-x:auto;scrollbar-width:thin;scrollbar-color:rgba(107,135,210,.38) transparent}.nexus-tab{max-width:190px;min-width:82px;height:29px;padding:0 11px;border:1px solid rgba(130,150,207,.13);border-radius:9px;background:rgba(255,255,255,.035);color:#aab6d4;text-align:left;text-overflow:ellipsis;white-space:nowrap;overflow:hidden;font:600 10px Inter,Segoe UI,Arial,sans-serif;cursor:pointer;transition:.16s}.nexus-tab:hover{background:rgba(103,131,255,.13);color:#eff5ff}.nexus-tab.active{border-color:rgba(67,220,255,.42);background:linear-gradient(110deg,rgba(18,68,90,.65),rgba(54,42,100,.55));color:#eafaff;box-shadow:inset 0 1px rgba(255,255,255,.08)}.nexus-new-tab{width:29px;height:29px;flex:0 0 auto;border:1px solid rgba(87,219,255,.28);border-radius:9px;background:rgba(45,189,255,.08);color:#71e5ff;font:400 19px/1 Inter,Segoe UI,Arial,sans-serif;cursor:pointer}.nexus-new-tab:hover{background:rgba(45,189,255,.18);border-color:rgba(87,219,255,.55)}.nexus-tabs[hidden]{display:none}@media(max-width:650px){.nexus-tabs{height:34px;padding:0 7px 6px}.nexus-tab{height:26px;max-width:120px;min-width:65px;padding:0 8px}.nexus-new-tab{width:26px;height:26px}}`;
     root.prepend(style);
     document.documentElement.appendChild(host);
 
@@ -78,6 +80,7 @@
     status = root.querySelector(".nexus-status");
     formatList = root.querySelector(".nexus-format-list");
     urlInput = root.querySelector(".nexus-url");
+    tabList = root.querySelector(".nexus-tab-list");
     menu.dir = isArabic() ? "rtl" : "ltr";
     if (mediaCaptureAllowed()) root.querySelector(".nexus-media")?.classList.add("visible");
     const progress = root.querySelector(".nexus-progress");
@@ -100,6 +103,8 @@
       event.stopPropagation();
       if (!event.isTrusted) return;
       const action = target.dataset.action;
+      if (action === "new-tab") void openBrowserTab();
+      if (target.dataset.tabLabel) void switchBrowserTab(target.dataset.tabLabel);
       if (action === "back") history.back();
       if (action === "forward") history.forward();
       if (action === "refresh") {
@@ -149,7 +154,7 @@
         const stamp = `${location.href}\n${document.title}`;
         if (stamp === lastSavedUrl) return;
         void invoke("browser_save_tab", { url: location.href, title: document.title.slice(0, 512), sessionToken })
-          .then(() => { lastSavedUrl = stamp; }).catch(() => {});
+          .then(() => { lastSavedUrl = stamp; void refreshBrowserTabs(); }).catch(() => {});
       }, 650);
     };
     const updateAddress = () => {
@@ -176,6 +181,8 @@
     observeTitle();
     document.addEventListener("DOMContentLoaded", observeTitle, { once: true });
     scheduleSaveTab();
+    void refreshBrowserTabs();
+    setInterval(() => void refreshBrowserTabs(), 2200);
 
     const mediaRoots = new Set([document]);
     let mediaScanQueued = false;
@@ -225,6 +232,60 @@
     let unit = 0;
     while (value >= 1024 && unit < units.length - 1) { value /= 1024; unit += 1; }
     return `${value >= 10 ? value.toFixed(0) : value.toFixed(1)} ${units[unit]}`;
+  }
+
+  async function refreshBrowserTabs() {
+    if (!tabList) return;
+    const invoke = getInvoke();
+    if (!invoke) return;
+    try {
+      const tabs = await invoke("browser_list_tabs", { sessionToken });
+      if (!Array.isArray(tabs)) return;
+      tabList.replaceChildren();
+      tabs.forEach((tab) => {
+        if (!tab || typeof tab.label !== "string") return;
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = `nexus-tab${tab.active ? " active" : ""}`;
+        button.dataset.tabLabel = tab.label;
+        button.setAttribute("role", "tab");
+        button.setAttribute("aria-selected", String(Boolean(tab.active)));
+        button.title = String(tab.title || tab.url || words().tab);
+        button.textContent = String(tab.title || (() => { try { return new URL(tab.url).hostname; } catch { return words().tab; } })());
+        tabList.appendChild(button);
+      });
+    } catch { /* The current media action remains available if tab sync is temporarily unavailable. */ }
+  }
+
+  async function openBrowserTab() {
+    const invoke = getInvoke();
+    if (!invoke) {
+      if (status) { status.textContent = words().desktop; status.classList.add("error"); menu?.classList.add("open"); }
+      return;
+    }
+    try {
+      await invoke("browser_open_tab", { url: "https://www.youtube.com/", sessionToken });
+      void refreshBrowserTabs();
+    } catch (error) {
+      if (status) {
+        status.textContent = (typeof error === "string" ? error : error && typeof error === "object" && "message" in error ? String(error.message) : words().unavailable).slice(0, 180);
+        status.classList.add("error");
+        menu?.classList.add("open");
+      }
+    }
+  }
+
+  async function switchBrowserTab(label) {
+    const invoke = getInvoke();
+    if (!invoke) return;
+    try { await invoke("browser_switch_tab", { label, sessionToken }); }
+    catch (error) {
+      if (status) {
+        status.textContent = (typeof error === "string" ? error : error && typeof error === "object" && "message" in error ? String(error.message) : words().unavailable).slice(0, 180);
+        status.classList.add("error");
+        menu?.classList.add("open");
+      }
+    }
   }
 
   async function loadVideoFormats() {

@@ -342,6 +342,61 @@ pub fn close_browser_tab(app: AppHandle, state: State<'_, AppState>, label: Stri
     Ok(true)
 }
 
+#[tauri::command]
+pub fn browser_list_tabs(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    window: WebviewWindow,
+    session_token: String,
+) -> Result<Vec<BrowserTab>, CommandError> {
+    validate_browser_session(&window, &state, &session_token)?;
+    let _guard = state.browser_tabs_lock.lock().map_err(|_| CommandError::manager("browser tab storage is unavailable"))?;
+    load_browser_tabs(&app)
+}
+
+#[tauri::command]
+pub fn browser_open_tab(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    window: WebviewWindow,
+    url: String,
+    session_token: String,
+) -> Result<BrowserTab, CommandError> {
+    validate_browser_session(&window, &state, &session_token)?;
+    create_browser_window(&app, &state, &url, None, true)
+}
+
+#[tauri::command]
+pub fn browser_switch_tab(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    window: WebviewWindow,
+    label: String,
+    session_token: String,
+) -> Result<bool, CommandError> {
+    let (current_label, _) = validate_browser_session(&window, &state, &session_token)?;
+    if !is_browser_window_label(&label) {
+        return Err(CommandError::validation("invalid browser tab label"));
+    }
+    if !load_browser_tabs(&app)?.iter().any(|tab| tab.label == label) {
+        return Err(CommandError::validation("browser tab was not found"));
+    }
+    let target = app.get_webview_window(&label).ok_or_else(|| CommandError::validation("browser tab is no longer open"))?;
+    for slot in 1..=8 {
+        let other = format!("nexus-browser-{slot}");
+        if other != label {
+            if let Some(other_window) = app.get_webview_window(&other) { let _ = other_window.hide(); }
+        }
+    }
+    reveal_browser_window(&target)?;
+    let tabs = activate_browser_tab_record(&app, &state, &label)?;
+    if let Some(tab) = tabs.iter().find(|tab| tab.label == label) {
+        let _ = app.emit("browser://tab-updated", tab);
+    }
+    let _ = app.emit("browser://tab-hidden", current_label);
+    Ok(true)
+}
+
 fn validate_browser_session(window: &WebviewWindow, state: &AppState, session_token: &str) -> Result<(String, Url), CommandError> {
     let label = window.label().to_string();
     if !is_browser_window_label(&label) {

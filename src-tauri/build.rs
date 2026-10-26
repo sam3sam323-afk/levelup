@@ -21,6 +21,9 @@ fn main() {
                 "browser_save_tab",
                 "browser_get_video_formats",
                 "browser_start_download",
+                "browser_list_tabs",
+                "browser_open_tab",
+                "browser_switch_tab",
             ]),
         ),
     )
