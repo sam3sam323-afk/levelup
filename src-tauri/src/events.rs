@@ -1,0 +1,9 @@
+pub const DOWNLOAD_QUEUED: &str = "download://queued";
+pub const DOWNLOAD_STARTED: &str = "download://started";
+pub const DOWNLOAD_PROGRESS: &str = "download://progress";
+pub const DOWNLOAD_PAUSED: &str = "download://paused";
+pub const DOWNLOAD_RESUMED: &str = "download://resumed";
+pub const DOWNLOAD_COMPLETED: &str = "download://completed";
+pub const DOWNLOAD_CANCELLED: &str = "download://cancelled";
+pub const DOWNLOAD_FAILED: &str = "download://failed";
+pub const ENGINE_STATUS: &str = "engine://status";
