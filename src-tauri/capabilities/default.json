@@ -9,6 +9,8 @@
     "core:window:allow-set-focus",
     "core:window:allow-get-all-windows",
     "core:window:allow-close",
+    "core:window:allow-minimize",
+    "core:window:allow-toggle-maximize",
     "allow-start-download",
     "allow-pause-download",
     "allow-resume-download",
