@@ -130,6 +130,7 @@ const copy = {
     eta: "Time left",
     pause: "Pause",
     resume: "Resume",
+    resumeDownload: "Resume download",
     cancel: "Cancel",
     openFolder: "Open folder",
     copyLink: "Copy link",
@@ -216,6 +217,7 @@ const copy = {
     eta: "الوقت المتبقي",
     pause: "إيقاف مؤقت",
     resume: "استئناف",
+    resumeDownload: "استئناف التنزيل",
     cancel: "إلغاء",
     openFolder: "فتح المجلد",
     copyLink: "نسخ الرابط",
@@ -317,7 +319,9 @@ function formatBytes(value?: number) {
   if (!value || value <= 0) return "0 B";
   const units = ["B", "KB", "MB", "GB", "TB"];
   const index = Math.min(Math.floor(Math.log(value) / Math.log(1024)), units.length - 1);
-  return `${(value / 1024 ** index).toFixed(index === 0 ? 0 : 1)} ${units[index]}`;
+  const amount = value / 1024 ** index;
+  const digits = index === 0 ? 0 : amount < 10 ? 2 : 1;
+  return `${amount.toFixed(digits)} ${units[index]}`;
 }
 
 function formatSpeed(value?: number) {
@@ -327,10 +331,13 @@ function formatSpeed(value?: number) {
 function formatEta(value?: number) {
   if (value === undefined || value < 0) return "—";
   if (value === 0) return "Complete";
+  const days = Math.floor(value / 86400);
   const hours = Math.floor(value / 3600);
   const minutes = Math.floor((value % 3600) / 60);
   const seconds = value % 60;
-  return hours > 0 ? `${hours}h ${minutes}m` : `${String(minutes).padStart(2, "0")}m ${String(seconds).padStart(2, "0")}s`;
+  if (days > 0) return `${days}d ${String(hours % 24).padStart(2, "0")}h`;
+  if (hours > 0) return `${hours}h ${String(minutes).padStart(2, "0")}m`;
+  return `${String(minutes).padStart(2, "0")}m ${String(seconds).padStart(2, "0")}s`;
 }
 
 function categoryForTask(task: Pick<TauriDownloadTask, "filename" | "engine">): Category {
@@ -692,7 +699,7 @@ export default function Home() {
           </div>
         </main>
 
-        <aside className="right-rail"><div className="rail-section"><div className="rail-title"><span>{t.details}</span><MoreHorizontal size={17} /></div>{selected ? <><div className={`detail-file-icon ${selected.accent}`}><CategoryIcon type={selected.type} /></div><h3 className="detail-name">{selected.name}</h3><span className="detail-url">{selected.url}</span><div className="detail-progress"><div className="detail-progress-head"><span>{t.progress}</span><strong>{selected.progress}%</strong></div><div className="progress-track"><span className={`progress-fill ${selected.accent}`} style={{ width: `${selected.progress}%` }} /></div></div><div className="detail-grid"><DetailMetric icon={<Gauge size={14} />} label={t.speed} value={selected.speed} /><DetailMetric icon={<Clock3 size={14} />} label={t.eta} value={selected.eta} /><DetailMetric icon={<HardDrive size={14} />} label={t.size} value={selected.size} /><DetailMetric icon={<Zap size={14} />} label={t.engine} value={selected.engine} /></div><div className="detail-actions"><button onClick={copyLink}><Copy size={15} /> {t.copyLink}</button><button onClick={() => setToast(t.mockAction)}><FolderOpen size={15} /> {t.openFolder}</button></div></> : <div className="rail-empty">{t.selectHint}</div>}</div><div className="rail-section storage-section"><div className="rail-title"><span>{t.storage}</span><HardDrive size={16} /></div><div className="storage-amount"><strong>485.9</strong><span>GB <small>/ 1 TB</small></span></div><div className="storage-track"><span /></div><div className="storage-caption"><span>48.5% {t.totalStoredSub}</span><span>514.1 GB free</span></div><div className="category-list"><CategoryLine icon={<Video size={15} />} label="Video" value="240.5 GB" percent={49} color="cyan" /><CategoryLine icon={<Headphones size={15} />} label="Audio" value="45.2 GB" percent={19} color="pink" /><CategoryLine icon={<FileArchive size={15} />} label="Archive" value="181.8 GB" percent={32} color="purple" /></div></div><div className="rail-section activity-section"><div className="rail-title"><span>{t.recentActivity}</span><RefreshCw size={15} /></div><div className="activity-row"><span className="activity-icon cyan"><ArrowDownToLine size={13} /></span><div><strong>Update_v2.12.rar</strong><small>Added 2 min ago</small></div><b>+14.2 GB</b></div><div className="activity-row"><span className="activity-icon purple"><Check size={13} /></span><div><strong>Cyber_Mix.flac</strong><small>Completed yesterday</small></div><b>520 MB</b></div></div></aside>
+        <aside className="right-rail"><div className="rail-section"><div className="rail-title"><span>{t.details}</span><MoreHorizontal size={17} /></div>{selected ? <><div className={`detail-file-icon ${selected.accent}`}><CategoryIcon type={selected.type} /></div><h3 className="detail-name">{selected.name}</h3><span className="detail-url">{selected.url}</span><div className="detail-progress"><div className="detail-progress-head"><span>{t.progress}</span><strong>{selected.progress}%</strong></div><div className="progress-track"><span className={`progress-fill ${selected.accent}`} style={{ width: `${selected.progress}%` }} /></div></div><div className="detail-grid"><DetailMetric icon={<Gauge size={14} />} label={t.speed} value={selected.speed} /><DetailMetric icon={<Clock3 size={14} />} label={t.eta} value={selected.eta} /><DetailMetric icon={<HardDrive size={14} />} label={t.size} value={selected.size} /><DetailMetric icon={<Zap size={14} />} label={t.engine} value={selected.engine} /></div><div className="detail-actions">{selected.state === "paused" ? <button onClick={() => toggleState(selected.id)}><Play size={15} /> {t.resumeDownload}</button> : null}<button onClick={copyLink}><Copy size={15} /> {t.copyLink}</button><button onClick={() => setToast(t.mockAction)}><FolderOpen size={15} /> {t.openFolder}</button></div></> : <div className="rail-empty">{t.selectHint}</div>}</div><div className="rail-section storage-section"><div className="rail-title"><span>{t.storage}</span><HardDrive size={16} /></div><div className="storage-amount"><strong>485.9</strong><span>GB <small>/ 1 TB</small></span></div><div className="storage-track"><span /></div><div className="storage-caption"><span>48.5% {t.totalStoredSub}</span><span>514.1 GB free</span></div><div className="category-list"><CategoryLine icon={<Video size={15} />} label="Video" value="240.5 GB" percent={49} color="cyan" /><CategoryLine icon={<Headphones size={15} />} label="Audio" value="45.2 GB" percent={19} color="pink" /><CategoryLine icon={<FileArchive size={15} />} label="Archive" value="181.8 GB" percent={32} color="purple" /></div></div><div className="rail-section activity-section"><div className="rail-title"><span>{t.recentActivity}</span><RefreshCw size={15} /></div><div className="activity-row"><span className="activity-icon cyan"><ArrowDownToLine size={13} /></span><div><strong>Update_v2.12.rar</strong><small>Added 2 min ago</small></div><b>+14.2 GB</b></div><div className="activity-row"><span className="activity-icon purple"><Check size={13} /></span><div><strong>Cyber_Mix.flac</strong><small>Completed yesterday</small></div><b>520 MB</b></div></div></aside>
       </div>
 
       {modal === "add" ? <AddDownloadModal language={language} defaultPath={defaultDownloadDir} onClose={() => setModal(null)} onAdd={addDownload} /> : null}
