@@ -565,3 +565,28 @@ button:active, .app-button:active, .pair-button:active, .detail-actions button:a
 .nexus-app[dir="rtl"] .browser-session-main small { text-align: right; }
 .nexus-app[dir="rtl"] .browser-session-actions { direction: rtl; }
 @media (max-width: 760px) { .browser-session-card.is-active { border-width: 1px; } }
+
+
+/* Interactive polish: restrained live glow, clipboard prompt, and completion particles. */
+.stat-card { transition: transform .22s ease, box-shadow .28s ease, border-color .22s ease; }
+.stat-card:hover { transform: translateY(-2px); }
+.stat-card.is-updating { animation: statPulse .62s ease-out; }
+@keyframes statPulse { 0% { box-shadow: 0 0 0 0 rgba(78,220,255,0); } 38% { box-shadow: 0 0 24px 2px rgba(78,220,255,.24), inset 0 0 18px rgba(78,220,255,.06); border-color: rgba(78,220,255,.42); } 100% { box-shadow: 0 0 0 0 rgba(78,220,255,0); } }
+.utility-settings { display: grid; gap: 10px; margin-top: 24px; padding: 18px; border: 1px solid var(--line); border-radius: 16px; background: var(--panel); }
+.utility-settings h2 { margin: 0 0 3px; color: var(--text); font-size: 14px; }
+.utility-setting { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 13px 2px; border-top: 1px solid var(--line); cursor: pointer; }
+.utility-setting span { display: grid; gap: 5px; }
+.utility-setting strong { color: var(--text); font-size: 12px; }
+.utility-setting small { color: var(--muted); font-size: 10px; }
+.utility-setting input { width: 18px; height: 18px; accent-color: #44d9f3; }
+.clipboard-toast { position: fixed; z-index: 120; inset-inline-start: 50%; bottom: 24px; display: flex; align-items: center; gap: 12px; width: min(540px, calc(100vw - 28px)); padding: 13px 14px; transform: translateX(-50%); border: 1px solid rgba(80,220,255,.26); border-radius: 15px; background: rgba(10,16,34,.94); box-shadow: 0 18px 55px rgba(0,0,0,.38), 0 0 28px rgba(42,202,255,.11); color: #e9f4ff; backdrop-filter: blur(20px); animation: clipboardIn .28s cubic-bezier(.2,.8,.2,1) both; }
+.clipboard-toast > div { display: grid; gap: 4px; min-width: 0; flex: 1; }
+.clipboard-toast strong { font-size: 12px; }
+.clipboard-toast span { overflow: hidden; color: #94a5c5; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.clipboard-toast button { flex: 0 0 auto; padding: 8px 12px; border: 0; border-radius: 9px; background: linear-gradient(120deg,#43d8ee,#748cff); color: #07101b; font-size: 11px; font-weight: 800; cursor: pointer; }
+.clipboard-toast button.clipboard-dismiss { padding: 2px 5px; background: transparent; color: #9baaca; font-size: 19px; }
+@keyframes clipboardIn { from { opacity: 0; transform: translate(-50%, 14px) scale(.98); } to { opacity: 1; transform: translate(-50%, 0) scale(1); } }
+.download-celebration { position: fixed; z-index: 110; inset: 0; overflow: hidden; pointer-events: none; }
+.download-celebration i { position: absolute; top: 47%; left: 50%; width: 6px; height: 10px; border-radius: 2px; background: hsl(var(--hue) 92% 66%); opacity: 0; box-shadow: 0 0 10px hsl(var(--hue) 100% 68% / .45); animation: confettiBurst 1.55s cubic-bezier(.12,.72,.23,1) both; animation-delay: 60ms; }
+@keyframes confettiBurst { 0% { opacity: 0; transform: translate(0,0) rotate(0) scale(.5); } 12% { opacity: .95; } 100% { opacity: 0; transform: translate(var(--x), var(--y)) rotate(160deg) scale(.85); } }
+@media (prefers-reduced-motion: reduce) { .stat-card, .clipboard-toast, .download-celebration i { animation-duration: .01ms !important; transition-duration: .01ms !important; } }

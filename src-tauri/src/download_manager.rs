@@ -50,6 +50,14 @@ impl DownloadManager {
         tasks.get(task_id).cloned().ok_or_else(|| "task not found".to_string())
     }
 
+    pub fn set_last_error(&self, task_id: &str, error: String) -> Result<DownloadTask, String> {
+        let mut tasks = self.tasks.lock().map_err(|_| "download manager lock poisoned".to_string())?;
+        let task = tasks.get_mut(task_id).ok_or_else(|| "task not found".to_string())?;
+        task.last_error = Some(error);
+        task.updated_at = format!("{:?}", std::time::SystemTime::now());
+        Ok(task.clone())
+    }
+
     pub fn set_playlist_cursor(&self, task_id: &str, index: usize) -> Result<DownloadTask, String> {
         let mut tasks = self.tasks.lock().map_err(|_| "download manager lock poisoned".to_string())?;
         let task = tasks.get_mut(task_id).ok_or_else(|| "task not found".to_string())?;
@@ -95,6 +103,7 @@ impl DownloadManager {
             (&task.state, &next),
             (DownloadState::Queued, DownloadState::Starting)
                 | (DownloadState::Queued, DownloadState::Cancelled)
+                | (DownloadState::Queued, DownloadState::Failed)
                 | (DownloadState::Starting, DownloadState::Downloading)
                 | (DownloadState::Starting, DownloadState::Queued)
                 | (DownloadState::Starting, DownloadState::Paused)

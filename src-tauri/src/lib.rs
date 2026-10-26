@@ -10,8 +10,8 @@ use commands::{
     cancel_download, get_default_download_dir, get_download, get_engine_status, get_system_drives, list_downloads, remove_download,
     open_file_location, open_browser_window, browser_start_download, browser_get_video_formats, browser_save_tab,
     list_browser_tabs, restore_browser_tabs, focus_browser_tab, close_browser_tab,
-    browser_list_tabs, browser_open_tab, browser_switch_tab,
-    pause_download, resume_download, start_download, AppState,
+            browser_list_tabs, browser_open_tab, browser_switch_tab,
+            pause_download, read_clipboard_text, resume_download, start_download, AppState,
 };
 use download_manager::DownloadManager;
 use models::DownloadTask;
@@ -26,6 +26,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_store::Builder::default().build())
+        .plugin(tauri_plugin_clipboard_manager::init())
         .manage(AppState {
             downloads: DownloadManager::default(),
             processes: process_manager::ProcessManager::default(),

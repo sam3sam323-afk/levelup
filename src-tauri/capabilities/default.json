@@ -19,6 +19,7 @@
     "allow-get-default-download-dir",
     "allow-get-engine-status",
     "allow-get-system-drives",
+    "clipboard-manager:allow-read-text",
     "allow-open-file-location",
     "allow-open-browser-window",
     "allow-list-browser-tabs",

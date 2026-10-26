@@ -36,6 +36,8 @@ import {
   Sun,
   Moon,
   Trash2,
+  Volume2,
+  VolumeX,
   Upload,
   Video,
   Wifi,
@@ -62,6 +64,32 @@ import {
   type PlaylistItemProgress,
   type TauriEngine,
 } from "../lib/tauriBridge";
+
+let uiAudioContext: AudioContext | null = null;
+function playUiSfx(kind: "action" | "complete" | "copy") {
+  try {
+    const AudioContextClass = window.AudioContext || (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (!AudioContextClass) return;
+    uiAudioContext ??= new AudioContextClass();
+    const context = uiAudioContext;
+    if (context.state === "suspended") void context.resume();
+    const notes = kind === "complete" ? [660, 880, 1175] : kind === "copy" ? [880] : [520, 660];
+    const start = context.currentTime;
+    notes.forEach((frequency, index) => {
+      const oscillator = context.createOscillator();
+      const gain = context.createGain();
+      oscillator.type = "sine";
+      oscillator.frequency.value = frequency;
+      const at = start + index * 0.075;
+      gain.gain.setValueAtTime(0.0001, at);
+      gain.gain.exponentialRampToValueAtTime(0.035, at + 0.012);
+      gain.gain.exponentialRampToValueAtTime(0.0001, at + 0.12);
+      oscillator.connect(gain).connect(context.destination);
+      oscillator.start(at);
+      oscillator.stop(at + 0.13);
+    });
+  } catch { /* Audio can be unavailable or blocked by platform policy. */ }
+}
 
 type Language = "en" | "ar";
 type NavId = "home" | "downloads" | "library" | "browser" | "utilities";
@@ -605,6 +633,12 @@ export default function Home() {
   const [sort, setSort] = useState("newest");
   const [modal, setModal] = useState<"add" | null>(null);
   const [toast, setToast] = useState("");
+  const [sfxEnabled, setSfxEnabled] = useState(() => { try { return window.localStorage.getItem("levelupnexus-sfx") !== "off"; } catch { return true; } });
+  const [clipboardSnifferEnabled, setClipboardSnifferEnabled] = useState(() => { try { return window.localStorage.getItem("levelupnexus-clipboard-sniffer") === "on"; } catch { return false; } });
+  const [clipboardCandidate, setClipboardCandidate] = useState("");
+  const [celebrationId, setCelebrationId] = useState("");
+  const ownClipboardWriteRef = useRef("");
+  const sfxEnabledRef = useRef(sfxEnabled);
   const [mobileNav, setMobileNav] = useState(false);
   const [theme, setTheme] = useState<"dark" | "light">(() => {
     try { return window.localStorage.getItem("levelupnexus-theme") === "light" ? "light" : "dark"; }
@@ -631,6 +665,38 @@ export default function Home() {
   useEffect(() => {
     try { window.localStorage.setItem("levelupnexus-theme", theme); } catch { /* storage can be unavailable in restricted WebViews */ }
   }, [theme]);
+
+  useEffect(() => {
+    sfxEnabledRef.current = sfxEnabled;
+    try {
+      window.localStorage.setItem("levelupnexus-sfx", sfxEnabled ? "on" : "off");
+      window.localStorage.setItem("levelupnexus-clipboard-sniffer", clipboardSnifferEnabled ? "on" : "off");
+    } catch { /* preferences remain usable for this session */ }
+  }, [sfxEnabled, clipboardSnifferEnabled]);
+
+  useEffect(() => {
+    if (!clipboardSnifferEnabled || !tauriMode) { setClipboardCandidate(""); return; }
+    let lastSeen = "";
+    let busy = false;
+    const poll = async () => {
+      if (busy) return;
+      busy = true;
+      try {
+        const value = ((await invokeTauri<string>("read_clipboard_text")) ?? "").trim();
+        const isLink = /^(https?:\/\/|magnet:\?)/i.test(value) && value.length <= 8192;
+        if (!isLink) { lastSeen = value; setClipboardCandidate(""); }
+        else if (value !== lastSeen) {
+          lastSeen = value;
+          if (value !== ownClipboardWriteRef.current) setClipboardCandidate(value);
+          ownClipboardWriteRef.current = "";
+        }
+      } catch { /* clipboard can be busy or unavailable on the current platform */ }
+      finally { busy = false; }
+    };
+    void poll();
+    const timer = window.setInterval(() => void poll(), 1600);
+    return () => window.clearInterval(timer);
+  }, [clipboardSnifferEnabled, tauriMode]);
 
   useEffect(() => {
     let active = true;
@@ -696,7 +762,14 @@ export default function Home() {
         }));
       };
       for (const eventName of ["download://queued", "download://started", "download://completed", "download://paused", "download://resumed", "download://cancelled"]) {
-        const cleanup = await listenTauri<TauriDownloadTask>(eventName, upsertTask);
+        const cleanup = await listenTauri<TauriDownloadTask>(eventName, (task) => {
+          upsertTask(task);
+          if (eventName === "download://completed") {
+            if (sfxEnabledRef.current) playUiSfx("complete");
+            setCelebrationId(task.taskId);
+            window.setTimeout(() => setCelebrationId((current) => current === task.taskId ? "" : current), 1900);
+          }
+        });
         if (cleanup) cleanups.push(cleanup);
       }
       const progressCleanup = await listenTauri<DownloadProgressEvent>("download://progress", updateProgress);
@@ -706,7 +779,7 @@ export default function Home() {
       const [directory, tasks, engineInfo] = await Promise.all([
         invokeTauri<string>("get_default_download_dir"),
         invokeTauri<TauriDownloadTask[]>("list_downloads"),
-        invokeTauri<{ engines: { engine: TauriEngine; available: boolean }[] }>("get_engine_status").catch(() => null),
+        invokeTauri<{ engines: { engine: TauriEngine; available: boolean; error?: string | null }[] }>("get_engine_status").catch((error: unknown) => { setEngineStatus(`${copy[language].noEngines}: ${readableCommandError(error)}`); return null; }),
       ]);
       if (!active) return;
       if (directory) setDefaultDownloadDir(directory);
@@ -714,6 +787,10 @@ export default function Home() {
         "yt-dlp": Boolean(engineInfo?.engines.some((engine) => engine.engine === "yt-dlp" && engine.available)),
         aria2c: Boolean(engineInfo?.engines.some((engine) => engine.engine === "aria2c" && engine.available)),
       });
+      if (engineInfo && !engineInfo.engines.some((engine) => engine.available)) {
+        const diagnostic = engineInfo.engines.map((engine) => engine.error).filter(Boolean).join("; ");
+        setEngineStatus(diagnostic ? `${copy[language].noEngines}: ${diagnostic}` : copy[language].noEngines);
+      }
       if (tasks?.length) {
         setDownloads((current) => {
           const merged = new Map(tasks.map((task) => [task.taskId, taskToItem(task)]));
@@ -760,6 +837,7 @@ export default function Home() {
       setToast(t.desktopRequired);
       return;
     }
+    if (sfxEnabled) playUiSfx("action");
     try {
       const task = await invokeTauri<TauriDownloadTask>("start_download", {
         url,
@@ -815,6 +893,8 @@ export default function Home() {
     if (!selected) return;
     try {
       await navigator.clipboard.writeText(selected.url);
+      ownClipboardWriteRef.current = selected.url;
+      if (sfxEnabled) playUiSfx("copy");
       setToast(t.copied);
     } catch {
       const textArea = document.createElement("textarea");
@@ -825,6 +905,7 @@ export default function Home() {
       textArea.select();
       const copied = document.execCommand("copy");
       textArea.remove();
+      if (copied) { ownClipboardWriteRef.current = selected.url; if (sfxEnabled) playUiSfx("copy"); }
       setToast(copied ? t.copied : t.copyFailed);
     }
   };
@@ -877,8 +958,15 @@ export default function Home() {
     try {
       const result = await invokeTauri<{ engines: { engine: string; available: boolean }[] }>("get_engine_status");
       const available = result?.engines.filter((engine) => engine.available).map((engine) => engine.engine) ?? [];
+      setEngineAvailability({
+        "yt-dlp": Boolean(result?.engines.some((engine) => engine.engine === "yt-dlp" && engine.available)),
+        aria2c: Boolean(result?.engines.some((engine) => engine.engine === "aria2c" && engine.available)),
+      });
       setEngineStatus(available.length ? `${t.enginesReady}: ${available.join(" · ")}` : t.noEngines);
-    } catch { setEngineStatus(t.noEngines); }
+    } catch (error) {
+      const detail = typeof error === "string" ? error : error && typeof error === "object" && "message" in error ? String(error.message) : "";
+      setEngineStatus(`${t.noEngines}${detail ? ` — ${detail}` : ""}`);
+    }
   };
 
   const navItems: { id: NavId; label: string; count?: number }[] = [
@@ -914,7 +1002,7 @@ export default function Home() {
           <div className="mobile-top"><button onClick={() => setMobileNav(true)}><Menu size={20} /></button><NexusMark size="small" /><strong>{t.nexus}</strong><button onClick={() => openAddModal()}><Plus size={19} /></button></div>
           <div className="content-scroll">
             <div key={activeNav} className="view-transition">
-            {activeNav === "browser" ? <BrowserView language={language} /> : activeNav === "utilities" ? <UtilitiesView language={language} pasteClipboardLink={pasteClipboardLink} openDownloadsFolder={openDownloadsFolder} checkEngines={checkEngines} engineStatus={engineStatus} /> : activeNav === "library" ? <LibraryView language={language} downloads={downloads} onOpen={async (item) => { setSelectedId(item.id); setActiveNav("downloads"); try { await invokeTauri("open_file_location", { path: item.location }); } catch { setToast(t.openFolder); } }} /> : <>
+            {activeNav === "browser" ? <BrowserView language={language} /> : activeNav === "utilities" ? <UtilitiesView language={language} pasteClipboardLink={pasteClipboardLink} openDownloadsFolder={openDownloadsFolder} checkEngines={checkEngines} engineStatus={engineStatus} sfxEnabled={sfxEnabled} setSfxEnabled={setSfxEnabled} clipboardSnifferEnabled={clipboardSnifferEnabled} setClipboardSnifferEnabled={setClipboardSnifferEnabled} /> : activeNav === "library" ? <LibraryView language={language} downloads={downloads} onOpen={async (item) => { setSelectedId(item.id); setActiveNav("downloads"); try { await invokeTauri("open_file_location", { path: item.location }); } catch { setToast(t.openFolder); } }} /> : <>
               <div className="content-heading"><div><div className="eyebrow control-room-eyebrow"><span className="eyebrow-line" /> {t.controlRoom}</div><h1>{activeNav === "downloads" ? t.downloads : t.overview}</h1><p>{activeNav === "downloads" ? t.queueSub : t.overviewSub}</p></div><div className="heading-actions"><AppButton icon={<Plus size={17} />} onClick={() => openAddModal()}>{t.newDownload}</AppButton></div></div>
               <section className="hero-card"><div className="hero-glow" /><div className="hero-copy"><div className="hero-chip"><span className="pulse-dot" /> {engineAvailable ? t.connected : tauriMode ? t.noEngines : t.previewOnly}</div><h2>{t.heroTitle}<br /><span>{t.heroTitleAccent}</span></h2><p>{t.inputPlaceholder}</p><div className="quick-add"><Link2 size={17} /><input value={quickAddUrl} onChange={(event) => setQuickAddUrl(event.target.value)} placeholder={t.inputPlaceholder} onKeyDown={(event) => { if (event.key === "Enter" && quickAddUrl.trim()) void addDownload(quickAddUrl.trim()); }} /><button onClick={() => openAddModal()}><Plus size={17} /> {t.newDownload}</button></div><div className="hero-meta"><span><Zap size={13} /> {t.routeVideo}</span><span><ShieldCheck size={13} /> {engineAvailable ? t.liveMode : tauriMode ? t.noEngines : t.previewOnly}</span></div></div><div className="hero-art"><div className="orbit orbit-one" /><div className="orbit orbit-two" /><div className="hero-logo"><NexusMark size="large" /></div><div className="float-stat float-stat-top"><span>{t.queueHealth}</span><strong>{activeCount}</strong></div><div className="float-stat float-stat-bottom"><Activity size={13} /><span>{formatSpeed(totalSpeed)}</span><b>{activeCount > 0 ? t.live : "—"}</b></div></div></section>
 
@@ -932,12 +1020,23 @@ export default function Home() {
 
       {modal === "add" ? <AddDownloadModal language={language} defaultPath={defaultDownloadDir} initialUrl={prefillUrl} tauriMode={tauriMode} engineAvailable={engineAvailable} onClose={() => { setModal(null); setPrefillUrl(""); }} onAdd={addDownload} /> : null}
       {toast ? <div className={`toast ${toast.startsWith(t.downloadError) ? "toast--error" : ""}`}>{toast.startsWith(t.downloadError) ? <AlertCircle size={16} /> : <CheckCircle2 size={16} />} {toast}</div> : null}
+      {clipboardCandidate ? <div className="clipboard-toast" role="status"><div><strong>{language === "ar" ? "رابط جديد في الحافظة" : "Link detected in clipboard"}</strong><span dir="ltr">{clipboardCandidate.length > 100 ? `${clipboardCandidate.slice(0, 100)}…` : clipboardCandidate}</span></div><button type="button" onClick={() => { const link = clipboardCandidate; setClipboardCandidate(""); void addDownload(link, defaultDownloadDir); if (sfxEnabled) playUiSfx("action"); }}>{language === "ar" ? "تنزيل" : "Download"}</button><button type="button" className="clipboard-dismiss" aria-label={language === "ar" ? "إغلاق" : "Dismiss"} onClick={() => setClipboardCandidate("")}>×</button></div> : null}
+      {celebrationId ? <div className="download-celebration" key={celebrationId} aria-hidden="true">{Array.from({ length: 22 }, (_, index) => <i key={index} style={{ "--x": `${(index % 11 - 5) * 22}px`, "--y": `${-95 - (index % 5) * 35}px`, "--hue": `${(index * 37) % 360}` } as React.CSSProperties} />)}</div> : null}
     </div>
   );
 }
 
 function StatCard({ icon, label, value, hint, color, onClick }: { icon: React.ReactNode; label: string; value: string; hint: string; color: string; onClick: () => void }) {
-  return <button type="button" className={`stat-card ${color}`} onClick={onClick}><span className="stat-icon">{icon}</span><span className="stat-label">{label}</span><strong>{value}</strong><span className="stat-hint">{hint}</span><span className="stat-spark" aria-hidden="true"><i /><i /><i /><i /><i /></span></button>;
+  const previousValue = useRef(value);
+  const [updating, setUpdating] = useState(false);
+  useEffect(() => {
+    if (previousValue.current === value) return;
+    previousValue.current = value;
+    setUpdating(true);
+    const timer = window.setTimeout(() => setUpdating(false), 650);
+    return () => window.clearTimeout(timer);
+  }, [value]);
+  return <button type="button" className={`stat-card ${color}${updating ? " is-updating" : ""}`} onClick={onClick}><span className="stat-icon">{icon}</span><span className="stat-label">{label}</span><strong>{value}</strong><span className="stat-hint">{hint}</span><span className="stat-spark" aria-hidden="true"><i /><i /><i /><i /><i /></span></button>;
 }
 
 function QueueToolbar({ language, search, setSearch, filter, setFilter, sort, setSort }: { language: Language; search: string; setSearch: (value: string) => void; filter: "all" | DownloadState; setFilter: (value: "all" | DownloadState) => void; sort: string; setSort: (value: string) => void }) {
@@ -1010,7 +1109,7 @@ function BrowserView({ language }: { language: Language }) {
     void (async () => {
       const [updated, closed] = await Promise.all([
         listenTauri<BrowserTab>("browser://tab-updated", (tab) => { if (active) mergeTab(tab); }),
-        listenTauri<string>("browser://closed", (label) => { if (active) setBrowserTabs((current) => current.filter((tab) => tab.label !== label)); }),
+        listenTauri<string>("browser://tab-closed", (label) => { if (active) setBrowserTabs((current) => current.filter((tab) => tab.label !== label)); }),
       ]);
       if (!active) { updated?.(); closed?.(); return; }
       unlistenUpdated = updated;
@@ -1081,9 +1180,10 @@ function BrowserView({ language }: { language: Language }) {
   </div>;
 }
 function Globe2Icon() { return <span className="browser-globe"><Wifi size={12} /></span>; }
-function UtilitiesView({ language, pasteClipboardLink, openDownloadsFolder, checkEngines, engineStatus }: { language: Language; pasteClipboardLink: () => void; openDownloadsFolder: () => void; checkEngines: () => void; engineStatus: string }) {
+function UtilitiesView({ language, pasteClipboardLink, openDownloadsFolder, checkEngines, engineStatus, sfxEnabled, setSfxEnabled, clipboardSnifferEnabled, setClipboardSnifferEnabled }: { language: Language; pasteClipboardLink: () => void; openDownloadsFolder: () => void; checkEngines: () => void; engineStatus: string; sfxEnabled: boolean; setSfxEnabled: (value: boolean) => void; clipboardSnifferEnabled: boolean; setClipboardSnifferEnabled: (value: boolean) => void }) {
   const t = copy[language];
-  return <div className="subpage"><div className="content-heading"><div><div className="eyebrow"><span className="eyebrow-line" /> {t.toolkitKicker}</div><h1>{t.utilitiesTitle}</h1><p>{t.utilitiesSub}</p></div></div><div className="utility-actions"><button className="utility-action" onClick={pasteClipboardLink}><Link2 size={18} /><span>{t.pasteClipboard}</span></button><button className="utility-action" onClick={openDownloadsFolder}><FolderOpen size={18} /><span>{t.openDownloadsFolder}</span></button><button className="utility-action" onClick={checkEngines}><Activity size={18} /><span>{t.checkEngines}</span></button></div>{engineStatus ? <p className="engine-status" role="status">{engineStatus}</p> : null}</div>;
+  const ar = language === "ar";
+  return <div className="subpage"><div className="content-heading"><div><div className="eyebrow"><span className="eyebrow-line" /> {t.toolkitKicker}</div><h1>{t.utilitiesTitle}</h1><p>{t.utilitiesSub}</p></div></div><div className="utility-actions"><button className="utility-action" onClick={pasteClipboardLink}><Link2 size={18} /><span>{t.pasteClipboard}</span></button><button className="utility-action" onClick={openDownloadsFolder}><FolderOpen size={18} /><span>{t.openDownloadsFolder}</span></button><button className="utility-action" onClick={checkEngines}><Activity size={18} /><span>{t.checkEngines}</span></button></div>{engineStatus ? <p className="engine-status" role="status">{engineStatus}</p> : null}<section className="utility-settings"><h2>{ar ? "تفاعلات التطبيق" : "App interactions"}</h2><label className="utility-setting"><span><strong>{ar ? "الأصوات التفاعلية" : "Interface sounds"}</strong><small>{ar ? "نغمات خفيفة عند الإضافة والنسخ والاكتمال" : "Subtle tones on add, copy, and completion"}</small></span><input type="checkbox" checked={sfxEnabled} onChange={(event) => setSfxEnabled(event.target.checked)} /></label><label className="utility-setting"><span><strong>{ar ? "رصد روابط الحافظة" : "Clipboard link detection"}</strong><small>{ar ? "يفحص نص الحافظة محليًا كل 1.6 ثانية؛ متوقف افتراضيًا" : "Checks clipboard text locally every 1.6 seconds; off by default"}</small></span><input type="checkbox" checked={clipboardSnifferEnabled} onChange={(event) => setClipboardSnifferEnabled(event.target.checked)} /></label></section></div>;
 }
 function LibraryView({ language, downloads, onOpen }: { language: Language; downloads: DownloadItem[]; onOpen: (item: DownloadItem) => void }) {
   const t = copy[language];

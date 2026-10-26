@@ -12,13 +12,14 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tauri::utils::config::WebviewUrl;
 use tauri::webview::WebviewWindowBuilder;
-use tauri::{AppHandle, Emitter, Manager, State, WebviewWindow};
+use tauri::{window::{ProgressBarState, ProgressBarStatus}, AppHandle, Emitter, Manager, State, WebviewWindow};
 use tauri_plugin_shell::{process::CommandEvent, ShellExt};
 use tauri_plugin_store::StoreExt;
 use url::Url;
 use uuid::Uuid;
 
 const STORE_PATH: &str = "level-up-nexus.json";
+const BROWSER_WINDOW_LABEL: &str = "nexus-browser-1";
 
 #[derive(Debug, Serialize)]
 pub struct CommandError {
@@ -172,6 +173,10 @@ fn is_browser_window_label(label: &str) -> bool {
     (1..=8).any(|slot| label == format!("nexus-browser-{slot}"))
 }
 
+fn is_browser_tab_label(label: &str) -> bool {
+    is_browser_window_label(label) || (label.starts_with("nexus-tab-") && label.len() <= 64 && label[10..].chars().all(|c| c.is_ascii_alphanumeric() || c == '-'))
+}
+
 fn reveal_browser_window(window: &WebviewWindow) -> Result<(), CommandError> {
     if window.is_minimized().map_err(|error| CommandError::manager(error.to_string()))? {
         window.unminimize().map_err(|error| CommandError::manager(error.to_string()))?;
@@ -186,10 +191,10 @@ fn create_browser_window(
     state: &AppState,
     raw_url: &str,
     requested_label: Option<&str>,
+    record_label: Option<&str>,
     activate: bool,
 ) -> Result<BrowserTab, CommandError> {
     let browser_url = parse_browser_url(raw_url)?;
-    let saved_labels = load_browser_tabs(app)?.into_iter().map(|tab| tab.label).collect::<std::collections::HashSet<_>>();
     let label = {
         let mut sessions = state.browser_sessions.lock().map_err(|_| CommandError::manager("browser session registry is unavailable"))?;
         let candidate = if let Some(requested) = requested_label {
@@ -198,10 +203,10 @@ fn create_browser_window(
             }
             requested.to_string()
         } else {
-            (1..=8)
-                .map(|slot| format!("nexus-browser-{slot}"))
-                .find(|candidate| !sessions.contains_key(candidate) && !saved_labels.contains(candidate))
-                .ok_or_else(|| CommandError::manager("close an existing browser tab before opening another"))?
+            if sessions.contains_key(BROWSER_WINDOW_LABEL) {
+                return Err(CommandError::manager("the browser window is already open"));
+            }
+            BROWSER_WINDOW_LABEL.to_string()
         };
         let token = Uuid::new_v4().to_string();
         sessions.insert(candidate.clone(), token);
@@ -212,11 +217,9 @@ fn create_browser_window(
     let initialization_script = include_str!("browser_injection.js").replace("__NEXUS_SESSION_TOKEN__", &token_literal);
     let sessions = state.browser_sessions.clone();
     let formats = state.browser_formats.clone();
-    let tabs_lock = state.browser_tabs_lock.clone();
     let shutting_down = state.shutting_down.clone();
     let event_app = app.clone();
     let event_label = label.clone();
-    let event_tab_label = label.clone();
     let built = WebviewWindowBuilder::new(app, label.clone(), WebviewUrl::External(browser_url.clone()))
         .title("LEVEL UP NEXUS — Browser")
         .inner_size(1280.0, 820.0)
@@ -236,26 +239,20 @@ fn create_browser_window(
         }
     };
     let title = browser_url.host_str().unwrap_or("Browser").to_string();
-    let tab = BrowserTab { label: label.clone(), url: browser_url.to_string(), title, active: activate };
+    let tab = BrowserTab { label: record_label.unwrap_or(&label).to_string(), url: browser_url.to_string(), title, active: activate };
     if let Err(error) = upsert_browser_tab(app, state, tab.clone(), activate) {
         let _ = window.close();
         if let Ok(mut sessions) = state.browser_sessions.lock() { sessions.remove(&label); }
         return Err(error);
     }
     if activate {
-        for slot in 1..=8 {
-            let other = format!("nexus-browser-{slot}");
-            if other != label { if let Some(other_window) = app.get_webview_window(&other) { let _ = other_window.hide(); } }
-        }
         let _ = reveal_browser_window(&window);
     }
     window.on_window_event(move |event| {
         if matches!(event, tauri::WindowEvent::CloseRequested { .. }) && !shutting_down.load(std::sync::atomic::Ordering::SeqCst) {
-            if let Ok(tabs) = remove_browser_tab_record(&event_app, &tabs_lock, &event_tab_label) {
-                if let Some(active) = tabs.iter().find(|tab| tab.active) {
-                    if let Some(window) = event_app.get_webview_window(&active.label) { let _ = reveal_browser_window(&window); }
-                    let _ = event_app.emit("browser://tab-updated", active);
-                }
+            if let Some(main) = event_app.get_webview_window("main") {
+                let _ = main.show();
+                let _ = main.set_focus();
             }
         }
         if matches!(event, tauri::WindowEvent::Destroyed) {
@@ -268,9 +265,36 @@ fn create_browser_window(
     Ok(tab)
 }
 
+fn create_browser_tab_in_window(
+    app: &AppHandle,
+    state: &AppState,
+    window: &WebviewWindow,
+    raw_url: &str,
+) -> Result<BrowserTab, CommandError> {
+    let browser_url = parse_browser_url(raw_url)?;
+    if load_browser_tabs(app)?.len() >= 8 {
+        return Err(CommandError::manager("close an existing browser tab before opening another"));
+    }
+    let tab = BrowserTab {
+        label: format!("nexus-tab-{}", Uuid::new_v4().simple()),
+        url: browser_url.to_string(),
+        title: browser_url.host_str().unwrap_or("Browser").to_string(),
+        active: true,
+    };
+    window.navigate(browser_url).map_err(|error| CommandError::manager(format!("cannot navigate browser tab: {error}")))?;
+    reveal_browser_window(window)?;
+    upsert_browser_tab(app, state, tab.clone(), true)?;
+    let _ = app.emit("browser://tab-updated", &tab);
+    Ok(tab)
+}
+
 #[tauri::command]
 pub async fn open_browser_window(app: AppHandle, state: State<'_, AppState>, url: String) -> Result<String, CommandError> {
-    let tab = create_browser_window(&app, &state, &url, None, true)?;
+    let tab = if let Some(window) = app.get_webview_window(BROWSER_WINDOW_LABEL) {
+        create_browser_tab_in_window(&app, &state, &window, &url)?
+    } else {
+        create_browser_window(&app, &state, &url, Some(BROWSER_WINDOW_LABEL), None, true)?
+    };
     Ok(tab.label)
 }
 
@@ -295,50 +319,47 @@ pub fn restore_browser_tabs(app: AppHandle, state: State<'_, AppState>) -> Resul
         save_browser_tabs(&app, &tabs)?;
         tabs
     };
-    let mut restored = Vec::new();
-    for tab in saved.into_iter().take(8) {
-        let already_open = state.browser_sessions.lock()
-            .map_err(|_| CommandError::manager("browser session registry is unavailable"))?
-            .contains_key(&tab.label);
-        if already_open {
-            restored.push(tab);
-            continue;
-        }
-        if let Ok(opened) = create_browser_window(&app, &state, &tab.url, Some(&tab.label), tab.active) {
-            restored.push(opened);
+    if app.get_webview_window(BROWSER_WINDOW_LABEL).is_none() {
+        if let Some(active) = saved.iter().find(|tab| tab.active) {
+            create_browser_window(&app, &state, &active.url, Some(BROWSER_WINDOW_LABEL), Some(&active.label), true)?;
         }
     }
-    Ok(restored)
+    Ok(saved)
 }
 
 #[tauri::command]
 pub fn focus_browser_tab(app: AppHandle, state: State<'_, AppState>, label: String) -> Result<bool, CommandError> {
-    if !is_browser_window_label(&label) { return Err(CommandError::validation("invalid browser tab label")); }
-    let window = app.get_webview_window(&label).ok_or_else(|| CommandError::validation("browser tab is not open"))?;
-    for slot in 1..=8 {
-        let other = format!("nexus-browser-{slot}");
-        if other != label { if let Some(window) = app.get_webview_window(&other) { let _ = window.hide(); } }
-    }
-    reveal_browser_window(&window)?;
-    let tabs = activate_browser_tab_record(&app, &state, &label)?;
+    if !is_browser_tab_label(&label) { return Err(CommandError::validation("invalid browser tab label")); }
+    let tab = load_browser_tabs(&app)?.into_iter().find(|tab| tab.label == label).ok_or_else(|| CommandError::validation("browser tab was not found"))?;
+    let tabs = if let Some(window) = app.get_webview_window(BROWSER_WINDOW_LABEL) {
+        window.navigate(parse_browser_url(&tab.url)?).map_err(|error| CommandError::manager(format!("cannot switch browser tab: {error}")))?;
+        reveal_browser_window(&window)?;
+        activate_browser_tab_record(&app, &state, &label)?
+    } else {
+        create_browser_window(&app, &state, &tab.url, Some(BROWSER_WINDOW_LABEL), Some(&label), true)?;
+        load_browser_tabs(&app)?
+    };
     if let Some(tab) = tabs.iter().find(|tab| tab.label == label) { let _ = app.emit("browser://tab-updated", tab); }
     Ok(true)
 }
 
 #[tauri::command]
 pub fn close_browser_tab(app: AppHandle, state: State<'_, AppState>, label: String) -> Result<bool, CommandError> {
-    if !is_browser_window_label(&label) { return Err(CommandError::validation("invalid browser tab label")); }
-    remove_browser_tab_record(&app, &state.browser_tabs_lock, &label)?;
-    if let Some(window) = app.get_webview_window(&label) {
-        window.close().map_err(|error| CommandError::manager(error.to_string()))?;
-    } else {
-        if let Ok(mut sessions) = state.browser_sessions.lock() { sessions.remove(&label); }
-        let _ = app.emit("browser://closed", &label);
+    if !is_browser_tab_label(&label) { return Err(CommandError::validation("invalid browser tab label")); }
+    let was_active = load_browser_tabs(&app)?.iter().any(|tab| tab.label == label && tab.active);
+    let tabs = remove_browser_tab_record(&app, &state.browser_tabs_lock, &label)?;
+    if let Some(window) = app.get_webview_window(BROWSER_WINDOW_LABEL) {
+        if was_active {
+            if let Some(active) = tabs.iter().find(|tab| tab.active) {
+                window.navigate(parse_browser_url(&active.url)?).map_err(|error| CommandError::manager(format!("cannot switch browser tab: {error}")))?;
+                let _ = reveal_browser_window(&window);
+                let _ = app.emit("browser://tab-updated", active);
+            } else {
+                window.close().map_err(|error| CommandError::manager(error.to_string()))?;
+            }
+        }
     }
-    if let Some(active) = load_browser_tabs(&app)?.into_iter().find(|tab| tab.active) {
-        if let Some(window) = app.get_webview_window(&active.label) { let _ = reveal_browser_window(&window); }
-        let _ = app.emit("browser://tab-updated", &active);
-    }
+    let _ = app.emit("browser://tab-closed", &label);
     Ok(true)
 }
 
@@ -363,7 +384,7 @@ pub fn browser_open_tab(
     session_token: String,
 ) -> Result<BrowserTab, CommandError> {
     validate_browser_session(&window, &state, &session_token)?;
-    create_browser_window(&app, &state, &url, None, true)
+    create_browser_tab_in_window(&app, &state, &window, &url)
 }
 
 #[tauri::command]
@@ -374,26 +395,17 @@ pub fn browser_switch_tab(
     label: String,
     session_token: String,
 ) -> Result<bool, CommandError> {
-    let (current_label, _) = validate_browser_session(&window, &state, &session_token)?;
-    if !is_browser_window_label(&label) {
+    validate_browser_session(&window, &state, &session_token)?;
+    if !is_browser_tab_label(&label) {
         return Err(CommandError::validation("invalid browser tab label"));
     }
-    if !load_browser_tabs(&app)?.iter().any(|tab| tab.label == label) {
-        return Err(CommandError::validation("browser tab was not found"));
-    }
-    let target = app.get_webview_window(&label).ok_or_else(|| CommandError::validation("browser tab is no longer open"))?;
-    for slot in 1..=8 {
-        let other = format!("nexus-browser-{slot}");
-        if other != label {
-            if let Some(other_window) = app.get_webview_window(&other) { let _ = other_window.hide(); }
-        }
-    }
-    reveal_browser_window(&target)?;
+    let tab = load_browser_tabs(&app)?.into_iter().find(|tab| tab.label == label).ok_or_else(|| CommandError::validation("browser tab was not found"))?;
+    window.navigate(parse_browser_url(&tab.url)?).map_err(|error| CommandError::manager(format!("cannot switch browser tab: {error}")))?;
+    reveal_browser_window(&window)?;
     let tabs = activate_browser_tab_record(&app, &state, &label)?;
     if let Some(tab) = tabs.iter().find(|tab| tab.label == label) {
         let _ = app.emit("browser://tab-updated", tab);
     }
-    let _ = app.emit("browser://tab-hidden", current_label);
     Ok(true)
 }
 
@@ -429,7 +441,7 @@ pub fn browser_save_tab(
     title: String,
     session_token: String,
 ) -> Result<BrowserTab, CommandError> {
-    let (label, current_url) = validate_browser_session(&window, &state, &session_token)?;
+    let (_, current_url) = validate_browser_session(&window, &state, &session_token)?;
     let requested_url = parse_browser_url(&url)?;
     if current_url.origin() != requested_url.origin() {
         return Err(CommandError::validation("saved URL must remain on the current browser origin"));
@@ -439,9 +451,9 @@ pub fn browser_save_tab(
     }
     let title = title.chars().filter(|character| !character.is_control()).take(160).collect::<String>();
     let title = if title.trim().is_empty() { requested_url.host_str().unwrap_or("Browser").to_string() } else { title.trim().to_string() };
-    let existing = load_browser_tabs(&app)?.into_iter().find(|tab| tab.label == label);
-    let tab = BrowserTab { label, url: requested_url.to_string(), title, active: existing.is_some_and(|tab| tab.active) };
-    upsert_browser_tab(&app, &state, tab.clone(), false)?;
+    let active = load_browser_tabs(&app)?.into_iter().find(|tab| tab.active).ok_or_else(|| CommandError::manager("active browser tab was not found"))?;
+    let tab = BrowserTab { label: active.label, url: requested_url.to_string(), title, active: true };
+    upsert_browser_tab(&app, &state, tab.clone(), true)?;
     let _ = app.emit("browser://tab-updated", &tab);
     Ok(tab)
 }
@@ -741,6 +753,7 @@ fn spawn_task(
     processes.insert(task.task_id.clone(), child).map_err(CommandError::manager)?;
     let started = downloads.transition(&task.task_id, DownloadState::Downloading).map_err(CommandError::manager)?;
     let _ = persist_tasks(&app, &downloads);
+    update_taskbar_progress(&app, &downloads);
     let _ = app.emit(events::DOWNLOAD_STARTED, &started);
 
     let app_handle = app.clone();
@@ -750,42 +763,19 @@ fn spawn_task(
     let processes_for_task = processes.clone();
     tauri::async_runtime::spawn(async move {
         let mut last_progress_emit = Instant::now() - Duration::from_secs(1);
+        let mut stdout_buffer = Vec::new();
+        let mut stderr_buffer = Vec::new();
         let mut exit_code: Option<i32> = None;
         while let Some(event) = receiver.recv().await {
             match event {
                 CommandEvent::Stdout(bytes) => {
-                    let line = String::from_utf8_lossy(&bytes).trim().to_string();
-                    if let Some((progress, downloaded, total, speed, eta, filename, playlist_index, playlist_total, playlist_state)) = parse_progress(&task_engine, &line) {
-                        if last_progress_emit.elapsed() >= Duration::from_millis(250) || progress >= 100.0 {
-                            if let Ok(updated) = downloads_for_task.update_progress(&task_id, progress, downloaded, total, speed, eta, filename, playlist_index, playlist_total, playlist_state) {
-                                let payload = DownloadProgressEvent {
-                                    task_id: updated.task_id,
-                                    state: updated.state,
-                                    progress: updated.progress,
-                                    downloaded_bytes: updated.downloaded_bytes,
-                                    total_bytes: updated.total_bytes,
-                                    speed_bytes_per_second: updated.speed_bytes_per_second,
-                                    eta_seconds: updated.eta_seconds,
-                                    filename: updated.filename,
-                                    engine: updated.engine,
-                                    error: updated.last_error,
-                                    playlist_items: updated.playlist_items,
-                                    playlist_current_index: updated.playlist_current_index,
-                                    playlist_total: updated.playlist_total,
-                                };
-                                let _ = app_handle.emit(events::DOWNLOAD_PROGRESS, payload);
-                                let _ = persist_tasks(&app_handle, &downloads_for_task);
-                                last_progress_emit = Instant::now();
-                            }
-                        }
-                    } else if !line.is_empty() {
-                        let _ = app_handle.emit("download://log", serde_json::json!({ "taskId": task_id, "stream": "stdout", "line": line }));
+                    for line in append_output_lines(&mut stdout_buffer, &bytes) {
+                        handle_download_output_line(&app_handle, &downloads_for_task, &task_id, &task_engine, "stdout", &line, &mut last_progress_emit);
                     }
                 }
                 CommandEvent::Stderr(bytes) => {
-                    let line = String::from_utf8_lossy(&bytes).trim().to_string();
-                    if !line.is_empty() {
-                        let _ = app_handle.emit("download://log", serde_json::json!({ "taskId": task_id, "stream": "stderr", "line": line }));
+                    for line in append_output_lines(&mut stderr_buffer, &bytes) {
+                        handle_download_output_line(&app_handle, &downloads_for_task, &task_id, &task_engine, "stderr", &line, &mut last_progress_emit);
                     }
                 }
                 CommandEvent::Error(error) => {
@@ -794,16 +784,24 @@ fn spawn_task(
                             let failed = downloads_for_task.mark_playlist_item_failed(&task_id, error.clone()).ok();
                             let _ = downloads_for_task.transition(&task_id, DownloadState::Failed);
                             let _ = persist_tasks(&app_handle, &downloads_for_task);
+                            update_taskbar_progress(&app_handle, &downloads_for_task);
                             let _ = app_handle.emit(events::DOWNLOAD_FAILED, serde_json::json!({ "taskId": task_id, "error": error, "playlistItem": failed.and_then(|task| task.playlist_current_index) }));
                         } else {
                             let _ = downloads_for_task.transition(&task_id, DownloadState::Failed);
                             let _ = persist_tasks(&app_handle, &downloads_for_task);
+                            update_taskbar_progress(&app_handle, &downloads_for_task);
                             let _ = app_handle.emit(events::DOWNLOAD_FAILED, serde_json::json!({ "taskId": task_id, "error": error }));
                         }
                     }
                 }
                 CommandEvent::Terminated(payload) => exit_code = payload.code,
                 _ => {}
+            }
+        }
+        for (buffer, stream) in [(&mut stdout_buffer, "stdout"), (&mut stderr_buffer, "stderr")] {
+            if !buffer.is_empty() {
+                let line = String::from_utf8_lossy(buffer).trim().to_string();
+                handle_download_output_line(&app_handle, &downloads_for_task, &task_id, &task_engine, stream, &line, &mut last_progress_emit);
             }
         }
         let _ = processes_for_task.remove(&task_id);
@@ -819,6 +817,7 @@ fn spawn_task(
                     let _ = app_handle.emit(events::DOWNLOAD_FAILED, serde_json::json!({ "taskId": task_id, "error": reason }));
                 }
                 let _ = persist_tasks(&app_handle, &downloads_for_task);
+                update_taskbar_progress(&app_handle, &downloads_for_task);
             } else if current.state == DownloadState::Downloading {
                 if current.options.playlist.unwrap_or(false) {
                     let _ = downloads_for_task.mark_playlist_item_completed(&task_id);
@@ -842,6 +841,7 @@ fn spawn_task(
                     }
                 } else if let Ok(completed) = downloads_for_task.transition(&task_id, DownloadState::Completed) {
                     let _ = persist_tasks(&app_handle, &downloads_for_task);
+                    update_taskbar_progress(&app_handle, &downloads_for_task);
                     let _ = app_handle.emit(events::DOWNLOAD_COMPLETED, completed);
                 }
             }
@@ -871,7 +871,21 @@ pub async fn start_download(
         return Err(error);
     }
     let _ = app.emit(events::DOWNLOAD_QUEUED, &task);
-    spawn_task(app, state.downloads.clone(), state.processes.clone(), task)
+    match spawn_task(app.clone(), state.downloads.clone(), state.processes.clone(), task.clone()) {
+        Ok(started) => Ok(started),
+        Err(error) => {
+            if let Ok(current) = state.downloads.get(&task.task_id) {
+                if current.state != DownloadState::Failed {
+                    let _ = state.downloads.transition(&task.task_id, DownloadState::Failed);
+                }
+            }
+            let _ = state.downloads.set_last_error(&task.task_id, error.message.clone());
+            let _ = persist_tasks(&app, &state.downloads);
+            update_taskbar_progress(&app, &state.downloads);
+            let _ = app.emit(events::DOWNLOAD_FAILED, serde_json::json!({ "taskId": task.task_id, "error": error.message }));
+            Err(error)
+        }
+    }
 }
 
 fn parse_progress(engine: &EngineType, line: &str) -> Option<(f64, u64, Option<u64>, u64, Option<u64>, Option<String>, Option<usize>, Option<usize>, DownloadState)> {
@@ -906,6 +920,76 @@ fn parse_aria2c_progress(line: &str) -> Option<(f64, u64, Option<u64>, u64, Opti
     let speed = line.split("DL:").nth(1).and_then(|value| value.split_whitespace().next()).map(parse_rate).unwrap_or(0);
     let eta = line.split("ETA:").nth(1).and_then(|value| value.split(|character: char| character == ']' || character.is_whitespace()).next()).and_then(parse_eta);
     Some((progress, downloaded.unwrap_or(0), total, speed, eta, None, None, None, DownloadState::Downloading))
+}
+
+fn append_output_lines(buffer: &mut Vec<u8>, chunk: &[u8]) -> Vec<String> {
+    buffer.extend_from_slice(chunk);
+    let mut lines = Vec::new();
+    while let Some(index) = buffer.iter().position(|byte| *byte == b'\n' || *byte == b'\r') {
+        let mut line: Vec<u8> = buffer.drain(..=index).collect();
+        line.pop();
+        lines.push(String::from_utf8_lossy(&line).trim().to_string());
+    }
+    lines
+}
+
+fn handle_download_output_line(
+    app: &AppHandle,
+    downloads: &DownloadManager,
+    task_id: &str,
+    engine: &EngineType,
+    stream: &str,
+    line: &str,
+    last_progress_emit: &mut Instant,
+) {
+    if let Some((progress, downloaded, total, speed, eta, filename, playlist_index, playlist_total, playlist_state)) = parse_progress(engine, line) {
+        if last_progress_emit.elapsed() >= Duration::from_millis(250) || progress >= 100.0 {
+            if let Ok(updated) = downloads.update_progress(task_id, progress, downloaded, total, speed, eta, filename, playlist_index, playlist_total, playlist_state) {
+                let payload = DownloadProgressEvent {
+                    task_id: updated.task_id,
+                    state: updated.state,
+                    progress: updated.progress,
+                    downloaded_bytes: updated.downloaded_bytes,
+                    total_bytes: updated.total_bytes,
+                    speed_bytes_per_second: updated.speed_bytes_per_second,
+                    eta_seconds: updated.eta_seconds,
+                    filename: updated.filename,
+                    engine: updated.engine,
+                    error: updated.last_error,
+                    playlist_items: updated.playlist_items,
+                    playlist_current_index: updated.playlist_current_index,
+                    playlist_total: updated.playlist_total,
+                };
+                let _ = app.emit(events::DOWNLOAD_PROGRESS, payload);
+                let _ = persist_tasks(app, downloads);
+                update_taskbar_progress(app, downloads);
+                *last_progress_emit = Instant::now();
+            }
+        }
+    } else if !line.is_empty() {
+        let _ = app.emit("download://log", serde_json::json!({ "taskId": task_id, "stream": stream, "line": line }));
+    }
+}
+
+fn update_taskbar_progress(app: &AppHandle, downloads: &DownloadManager) {
+    let Some(window) = app.get_webview_window("main") else { return };
+    let active = downloads.list().unwrap_or_default().into_iter()
+        .filter(|task| task.state == DownloadState::Downloading)
+        .collect::<Vec<_>>();
+    if active.is_empty() {
+        let _ = window.set_progress_bar(ProgressBarState { status: Some(ProgressBarStatus::None), progress: None });
+        return;
+    }
+    let percent = active.iter().map(|task| task.progress.clamp(0.0, 100.0)).sum::<f64>() / active.len() as f64;
+    let _ = window.set_progress_bar(ProgressBarState { status: Some(ProgressBarStatus::Normal), progress: Some(percent.round() as u64) });
+}
+
+#[tauri::command]
+pub async fn read_clipboard_text(app: AppHandle) -> Result<String, CommandError> {
+    tauri::async_runtime::spawn_blocking(move || {
+        use tauri_plugin_clipboard_manager::ClipboardExt;
+        app.clipboard().read_text().map_err(|error| CommandError::manager(format!("cannot read clipboard: {error}")))
+    }).await.map_err(|error| CommandError::manager(format!("clipboard worker failed: {error}")))?
 }
 
 fn parse_optional_u64(value: &str) -> Option<u64> {
@@ -993,6 +1077,7 @@ pub fn pause_download(app: AppHandle, state: State<'_, AppState>, task_id: Strin
     }
     let task = state.downloads.get(&task_id).map_err(CommandError::manager)?;
     persist_tasks(&app, &state.downloads)?;
+    update_taskbar_progress(&app, &state.downloads);
     app.emit(events::DOWNLOAD_PAUSED, &task).map_err(|error| CommandError::manager(error.to_string()))?;
     Ok(task)
 }
@@ -1028,6 +1113,7 @@ pub fn cancel_download(app: AppHandle, state: State<'_, AppState>, task_id: Stri
     }
     let task = state.downloads.get(&task_id).map_err(CommandError::manager)?;
     persist_tasks(&app, &state.downloads)?;
+    update_taskbar_progress(&app, &state.downloads);
     app.emit(events::DOWNLOAD_CANCELLED, &task).map_err(|error| CommandError::manager(error.to_string()))?;
     Ok(task)
 }
@@ -1115,7 +1201,7 @@ pub fn open_file_location(path: String) -> Result<(), CommandError> {
 
 #[cfg(test)]
 mod tests {
-    use super::{is_browser_window_label, parse_aria2c_progress, parse_browser_formats, parse_browser_url, parse_human_bytes, parse_rate, sidecar_args_with_ffmpeg_dir};
+    use super::{append_output_lines, is_browser_tab_label, is_browser_window_label, parse_aria2c_progress, parse_browser_formats, parse_browser_url, parse_human_bytes, parse_rate, parse_yt_dlp_progress, sidecar_args_with_ffmpeg_dir};
     #[cfg(target_os = "windows")]
     use super::parse_download_dir;
     use crate::models::{DownloadOptions, DownloadTask, EngineType};
@@ -1133,11 +1219,38 @@ mod tests {
     }
 
     #[test]
+    fn parses_fragmented_yt_dlp_progress_from_a_carriage_return_stream() {
+        let mut buffer = Vec::new();
+        assert!(append_output_lines(&mut buffer, b"download:downloading|1024|2048|2048|512KiB|00:00:02|NA|NA|video.mp4").is_empty());
+        let lines = append_output_lines(&mut buffer, b"\r");
+        assert_eq!(lines.len(), 1);
+        let parsed = parse_yt_dlp_progress(&lines[0]).unwrap();
+        assert_eq!(parsed.0, 50.0);
+        assert_eq!(parsed.1, 1024);
+        assert_eq!(parsed.5.as_deref(), Some("video.mp4"));
+    }
+
+    #[test]
+    fn parses_aria2_progress_delivered_with_a_cr_terminator() {
+        let mut buffer = Vec::new();
+        let lines = append_output_lines(&mut buffer, b"[#abc 1.2MiB/2.4MiB(50%) CN:4 DL:512KiB ETA:00m01s]\r");
+        assert_eq!(parse_aria2c_progress(&lines[0]).unwrap().0, 50.0);
+    }
+
+    #[test]
     fn parses_supported_human_byte_units() {
         assert_eq!(parse_human_bytes("1.5GiB"), Some((1.5_f64 * 1024_f64.powi(3)) as u64));
         assert_eq!(parse_human_bytes("2MB"), Some(2_000_000));
         assert_eq!(parse_human_bytes("unknown"), None);
         assert_eq!(parse_rate("512KiB/s"), 512 * 1024);
+    }
+
+    #[test]
+    fn accepts_virtual_tab_ids_but_not_arbitrary_window_labels() {
+        assert!(is_browser_tab_label("nexus-tab-7a1b2c"));
+        assert!(is_browser_tab_label("nexus-browser-1"));
+        assert!(!is_browser_tab_label("random-window"));
+        assert!(!is_browser_window_label("nexus-tab-7a1b2c"));
     }
 
     #[test]

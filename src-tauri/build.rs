@@ -12,6 +12,7 @@ fn main() {
                 "get_default_download_dir",
                 "get_engine_status",
                 "get_system_drives",
+                "read_clipboard_text",
                 "open_file_location",
                 "open_browser_window",
                 "list_browser_tabs",

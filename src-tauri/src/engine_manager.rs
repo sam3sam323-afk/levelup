@@ -13,13 +13,18 @@ pub fn sidecar_basename(engine: &EngineType) -> &'static str {
 
 pub fn sidecar_candidate(resource_dir: &Path, engine: &EngineType) -> PathBuf {
     let extension = if cfg!(target_os = "windows") { ".exe" } else { "" };
-    let filename = format!("{}-{}{}", sidecar_basename(engine), WINDOWS_TARGET, extension);
-    let beside_app = resource_dir.join(&filename);
-    if beside_app.is_file() {
-        beside_app
-    } else {
-        resource_dir.join("binaries").join(filename)
-    }
+    let basename = sidecar_basename(engine);
+    let filename = format!("{basename}{extension}");
+    let target_filename = format!("{basename}-{WINDOWS_TARGET}{extension}");
+    [
+        resource_dir.join(&filename),
+        resource_dir.join(&target_filename),
+        resource_dir.join("binaries").join(&filename),
+        resource_dir.join("binaries").join(&target_filename),
+    ]
+    .into_iter()
+    .find(|candidate| candidate.is_file())
+    .unwrap_or_else(|| resource_dir.join(filename))
 }
 
 pub fn inspect(app: &AppHandle) -> Result<EngineStatus, String> {
@@ -49,11 +54,11 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     #[test]
-    fn finds_sidecars_beside_the_windows_application() {
+    fn finds_packaged_sidecars_by_the_installed_basename() {
         let nonce = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
         let dir = std::env::temp_dir().join(format!("nexus-sidecar-test-{nonce}"));
         std::fs::create_dir_all(&dir).unwrap();
-        let name = format!("yt-dlp-{WINDOWS_TARGET}{}", if cfg!(target_os = "windows") { ".exe" } else { "" });
+        let name = format!("yt-dlp{}", if cfg!(target_os = "windows") { ".exe" } else { "" });
         std::fs::write(dir.join(&name), b"test").unwrap();
         assert_eq!(sidecar_candidate(&dir, &EngineType::YtDlp), dir.join(&name));
         std::fs::remove_dir_all(dir).unwrap();
