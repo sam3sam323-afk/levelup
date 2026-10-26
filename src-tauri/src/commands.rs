@@ -765,16 +765,19 @@ fn spawn_task(
         let mut last_progress_emit = Instant::now() - Duration::from_secs(1);
         let mut stdout_buffer = Vec::new();
         let mut stderr_buffer = Vec::new();
+        let mut stderr_tail = Vec::new();
         let mut exit_code: Option<i32> = None;
         while let Some(event) = receiver.recv().await {
             match event {
                 CommandEvent::Stdout(bytes) => {
                     for line in append_output_lines(&mut stdout_buffer, &bytes) {
+                        if parse_progress(&task_engine, &line).is_none() { remember_engine_error(&mut stderr_tail, &line); }
                         handle_download_output_line(&app_handle, &downloads_for_task, &task_id, &task_engine, "stdout", &line, &mut last_progress_emit);
                     }
                 }
                 CommandEvent::Stderr(bytes) => {
                     for line in append_output_lines(&mut stderr_buffer, &bytes) {
+                        remember_engine_error(&mut stderr_tail, &line);
                         handle_download_output_line(&app_handle, &downloads_for_task, &task_id, &task_engine, "stderr", &line, &mut last_progress_emit);
                     }
                 }
@@ -788,6 +791,7 @@ fn spawn_task(
                             let _ = app_handle.emit(events::DOWNLOAD_FAILED, serde_json::json!({ "taskId": task_id, "error": error, "playlistItem": failed.and_then(|task| task.playlist_current_index) }));
                         } else {
                             let _ = downloads_for_task.transition(&task_id, DownloadState::Failed);
+                            let _ = downloads_for_task.set_last_error(&task_id, error.clone());
                             let _ = persist_tasks(&app_handle, &downloads_for_task);
                             update_taskbar_progress(&app_handle, &downloads_for_task);
                             let _ = app_handle.emit(events::DOWNLOAD_FAILED, serde_json::json!({ "taskId": task_id, "error": error }));
@@ -801,19 +805,22 @@ fn spawn_task(
         for (buffer, stream) in [(&mut stdout_buffer, "stdout"), (&mut stderr_buffer, "stderr")] {
             if !buffer.is_empty() {
                 let line = String::from_utf8_lossy(buffer).trim().to_string();
+                if stream == "stderr" { remember_engine_error(&mut stderr_tail, &line); }
+                else if parse_progress(&task_engine, &line).is_none() { remember_engine_error(&mut stderr_tail, &line); }
                 handle_download_output_line(&app_handle, &downloads_for_task, &task_id, &task_engine, stream, &line, &mut last_progress_emit);
             }
         }
         let _ = processes_for_task.remove(&task_id);
         if let Ok(current) = downloads_for_task.get(&task_id) {
             if current.state == DownloadState::Downloading && exit_code != Some(0) {
-                let reason = format!("download engine exited unsuccessfully (code: {:?})", exit_code);
+                let reason = engine_failure_reason(&task_engine, exit_code, &stderr_tail);
                 if current.options.playlist.unwrap_or(false) {
                     let failed = downloads_for_task.mark_playlist_item_failed(&task_id, reason.clone()).ok();
                     let _ = downloads_for_task.transition(&task_id, DownloadState::Failed);
                     let _ = app_handle.emit(events::DOWNLOAD_FAILED, serde_json::json!({ "taskId": task_id, "error": reason, "playlistItem": failed.and_then(|task| task.playlist_current_index) }));
                 } else {
                     let _ = downloads_for_task.transition(&task_id, DownloadState::Failed);
+                    let _ = downloads_for_task.set_last_error(&task_id, reason.clone());
                     let _ = app_handle.emit(events::DOWNLOAD_FAILED, serde_json::json!({ "taskId": task_id, "error": reason }));
                 }
                 let _ = persist_tasks(&app_handle, &downloads_for_task);
@@ -931,6 +938,24 @@ fn append_output_lines(buffer: &mut Vec<u8>, chunk: &[u8]) -> Vec<String> {
         lines.push(String::from_utf8_lossy(&line).trim().to_string());
     }
     lines
+}
+
+fn remember_engine_error(tail: &mut Vec<String>, line: &str) {
+    let cleaned = line.trim();
+    if cleaned.is_empty() { return; }
+    let bounded = cleaned.chars().take(300).collect::<String>();
+    if tail.len() == 8 { tail.remove(0); }
+    tail.push(bounded);
+}
+
+fn engine_failure_reason(engine: &EngineType, exit_code: Option<i32>, stderr_tail: &[String]) -> String {
+    let engine_name = match engine { EngineType::YtDlp => "yt-dlp", EngineType::Aria2c => "aria2c" };
+    let details = stderr_tail.iter().rev().take(5).rev().cloned().collect::<Vec<_>>().join(" | ");
+    if details.is_empty() {
+        format!("{engine_name} exited unsuccessfully (code: {exit_code:?}); no diagnostic output was captured")
+    } else {
+        format!("{engine_name} failed (code: {exit_code:?}): {details}").chars().take(700).collect()
+    }
 }
 
 fn handle_download_output_line(
@@ -1201,11 +1226,30 @@ pub fn open_file_location(path: String) -> Result<(), CommandError> {
 
 #[cfg(test)]
 mod tests {
-    use super::{append_output_lines, is_browser_tab_label, is_browser_window_label, parse_aria2c_progress, parse_browser_formats, parse_browser_url, parse_human_bytes, parse_rate, parse_yt_dlp_progress, sidecar_args_with_ffmpeg_dir};
+    use super::{append_output_lines, engine_failure_reason, is_browser_tab_label, is_browser_window_label, parse_aria2c_progress, parse_browser_formats, parse_browser_url, parse_human_bytes, parse_rate, parse_yt_dlp_progress, remember_engine_error, sidecar_args_with_ffmpeg_dir};
     #[cfg(target_os = "windows")]
     use super::parse_download_dir;
     use crate::models::{DownloadOptions, DownloadTask, EngineType};
     use std::path::{Path, PathBuf};
+
+    #[test]
+    fn failure_reason_includes_engine_stderr_instead_of_only_exit_code() {
+        let mut tail = Vec::new();
+        remember_engine_error(&mut tail, "ERROR: Sign in to confirm you’re not a bot");
+        let reason = engine_failure_reason(&EngineType::YtDlp, Some(1), &tail);
+        assert!(reason.contains("yt-dlp"));
+        assert!(reason.contains("Some(1)"));
+        assert!(reason.contains("Sign in to confirm"));
+    }
+
+    #[test]
+    fn failure_reason_is_bounded_and_falls_back_if_stderr_is_empty() {
+        let mut tail = Vec::new();
+        remember_engine_error(&mut tail, &"x".repeat(500));
+        let reason = engine_failure_reason(&EngineType::Aria2c, Some(1), &tail);
+        assert!(reason.len() <= 700);
+        assert!(engine_failure_reason(&EngineType::YtDlp, Some(1), &[]).contains("no diagnostic output"));
+    }
 
     #[test]
     fn parses_aria2_progress_and_transfer_sizes() {

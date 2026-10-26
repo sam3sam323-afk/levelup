@@ -751,7 +751,7 @@ export default function Home() {
         if (progressFrame === null) progressFrame = window.requestAnimationFrame(flushProgress);
       };
       const failed = (event: { taskId: string; error?: string; playlistItem?: number }) => {
-        const detail = event.error?.slice(0, 200) || (language === "ar" ? "فشل محرك التنزيل" : "Download engine failed");
+        const detail = event.error?.slice(0, 520) || (language === "ar" ? "فشل محرك التنزيل" : "Download engine failed");
         setToast(`${copy[language].downloadError}: ${detail}`);
         setDownloads((items) => items.map((current) => {
           if (current.id !== event.taskId) return current;
