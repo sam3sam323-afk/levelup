@@ -1,6 +1,6 @@
 (() => {
   const sessionToken = __NEXUS_SESSION_TOKEN__;
-  const invoke = window.__TAURI__?.core?.invoke;
+  const getInvoke = () => window.__TAURI__?.core?.invoke;
   if (window.top !== window || !/^https?:$/.test(window.location.protocol) || window.__NEXUS_BROWSER_INSTALLED__) return;
   window.__NEXUS_BROWSER_INSTALLED__ = true;
   const supportedDomains = ["youtube.com", "youtu.be", "facebook.com", "fb.watch", "vimeo.com", "tiktok.com", "instagram.com", "dailymotion.com", "twitter.com", "x.com", "twitch.tv"];
@@ -8,8 +8,8 @@
 
   const isArabic = () => /^ar/i.test(document.documentElement?.lang || navigator.language || "");
   const words = () => isArabic()
-    ? { address: "ابحث أو أدخل رابطًا", back: "رجوع", forward: "تقدّم", refresh: "تحديث", mute: "كتم الصوت", unmute: "إلغاء كتم الصوت", discovered: "تم اكتشاف فيديو · عرض الجودات", choose: "الجودات المتاحة فعليًا", loadingFormats: "جارٍ فحص الصيغ من yt-dlp…", noFormats: "لم يعثر yt-dlp على صيغ قابلة للتنزيل", working: "جارٍ بدء التنزيل…", queued: "أُضيف التنزيل إلى الطابور", unavailable: "تعذّر بدء التنزيل", desktop: "ميزة التنزيل تتطلب تطبيق سطح المكتب", dark: "الوضع الداكن مفعل" }
-    : { address: "Search or enter a URL", back: "Back", forward: "Forward", refresh: "Refresh", mute: "Mute", unmute: "Unmute", discovered: "Video detected · show formats", choose: "Available formats", loadingFormats: "Inspecting formats with yt-dlp…", noFormats: "yt-dlp found no downloadable formats", working: "Starting download…", queued: "Download added to queue", unavailable: "Could not start download", desktop: "Downloads require the desktop app", dark: "Dark mode is on" };
+    ? { address: "ابحث أو أدخل رابطًا", back: "رجوع", forward: "تقدّم", refresh: "تحديث", mute: "كتم الصوت", unmute: "إلغاء كتم الصوت", discovered: "فاحص الوسائط · عرض الجودات", choose: "الجودات المتاحة فعليًا", loadingFormats: "جارٍ فحص الصيغ من yt-dlp…", noFormats: "لم يعثر yt-dlp على صيغ قابلة للتنزيل", working: "جارٍ بدء التنزيل…", queued: "أُضيف التنزيل إلى الطابور", unavailable: "تعذّر بدء التنزيل", desktop: "ميزة التنزيل تتطلب تطبيق سطح المكتب", dark: "الوضع الداكن مفعل" }
+    : { address: "Search or enter a URL", back: "Back", forward: "Forward", refresh: "Refresh", mute: "Mute", unmute: "Unmute", discovered: "NEXUS media · show formats", choose: "Available formats", loadingFormats: "Inspecting formats with yt-dlp…", noFormats: "yt-dlp found no downloadable formats", working: "Starting download…", queued: "Download added to queue", unavailable: "Could not start download", desktop: "Downloads require the desktop app", dark: "Dark mode is on" };
   const I = {
     back: '<svg viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></svg>',
     forward: '<svg viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg>',
@@ -79,6 +79,7 @@
     formatList = root.querySelector(".nexus-format-list");
     urlInput = root.querySelector(".nexus-url");
     menu.dir = isArabic() ? "rtl" : "ltr";
+    if (mediaCaptureAllowed()) root.querySelector(".nexus-media")?.classList.add("visible");
     const progress = root.querySelector(".nexus-progress");
     const muteButton = root.querySelector('[data-action="mute"]');
     urlInput.value = location.href;
@@ -141,6 +142,7 @@
 
     let observedUrl = location.href;
     const scheduleSaveTab = () => {
+      const invoke = getInvoke();
       if (!invoke) return;
       clearTimeout(saveTimer);
       saveTimer = setTimeout(() => {
@@ -158,7 +160,7 @@
         cachedFormatsUrl = "";
         formatList?.replaceChildren();
         menu?.classList.remove("open");
-        root.querySelector(".nexus-media")?.classList.remove("visible");
+        root.querySelector(".nexus-media")?.classList.toggle("visible", mediaCaptureAllowed());
         videoFound = false;
       }
       scheduleSaveTab();
@@ -179,7 +181,8 @@
     let mediaScanQueued = false;
     const activateVideo = (video) => {
       if (!(video instanceof HTMLVideoElement)) return;
-      const active = video.readyState >= 2 && (!video.paused || video.currentTime > 0);
+      const hasMediaSource = Boolean(video.currentSrc || video.src || video.querySelector("source[src]"));
+      const active = video.readyState >= 1 && hasMediaSource;
       if (active && !videoFound && mediaCaptureAllowed()) {
         videoFound = true;
         root.querySelector(".nexus-media")?.classList.add("visible");
@@ -226,6 +229,7 @@
 
   async function loadVideoFormats() {
     if (!status || !formatList) return;
+    const invoke = getInvoke();
     if (!invoke) {
       status.textContent = words().desktop;
       status.classList.add("error");
@@ -271,6 +275,7 @@
   async function requestDownload(button) {
     if (!status) return;
     const formatId = button.dataset.formatId;
+    const invoke = getInvoke();
     if (!invoke) {
       status.textContent = words().desktop;
       status.classList.add("error");

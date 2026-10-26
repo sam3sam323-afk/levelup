@@ -50,6 +50,7 @@ import {
   openBrowserWindow,
   focusBrowserTab,
   closeBrowserTab,
+  listBrowserTabs,
   restoreBrowserTabs,
   minimizeAppWindow,
   toggleAppWindowMaximize,
@@ -683,13 +684,17 @@ export default function Home() {
         pendingProgress.set(event.taskId, event);
         if (progressFrame === null) progressFrame = window.requestAnimationFrame(flushProgress);
       };
-      const failed = (event: { taskId: string; error?: string; playlistItem?: number }) => setDownloads((items) => items.map((current) => {
-        if (current.id !== event.taskId) return current;
-        const playlistItems = event.playlistItem
-          ? current.playlistItems.map((item) => item.index === event.playlistItem ? { ...item, state: "failed" as const, speedBytesPerSecond: 0, etaSeconds: undefined } : item)
-          : current.playlistItems;
-        return { ...current, playlistItems, state: "error", speed: "0 B/s", speedBytesPerSecond: 0, eta: event.error || "Failed" };
-      }));
+      const failed = (event: { taskId: string; error?: string; playlistItem?: number }) => {
+        const detail = event.error?.slice(0, 200) || (language === "ar" ? "فشل محرك التنزيل" : "Download engine failed");
+        setToast(`${copy[language].downloadError}: ${detail}`);
+        setDownloads((items) => items.map((current) => {
+          if (current.id !== event.taskId) return current;
+          const playlistItems = event.playlistItem
+            ? current.playlistItems.map((item) => item.index === event.playlistItem ? { ...item, state: "failed" as const, speedBytesPerSecond: 0, etaSeconds: undefined } : item)
+            : current.playlistItems;
+          return { ...current, playlistItems, state: "error", speed: "0 B/s", speedBytesPerSecond: 0, eta: detail };
+        }));
+      };
       for (const eventName of ["download://queued", "download://started", "download://completed", "download://paused", "download://resumed", "download://cancelled"]) {
         const cleanup = await listenTauri<TauriDownloadTask>(eventName, upsertTask);
         if (cleanup) cleanups.push(cleanup);
@@ -1010,8 +1015,15 @@ function BrowserView({ language }: { language: Language }) {
       if (!active) { updated?.(); closed?.(); return; }
       unlistenUpdated = updated;
       unlistenClosed = closed;
-      try { const restored = await restoreBrowserTabs(); if (active) setBrowserTabs(restored); }
-      catch { if (active) setBrowserTabs([]); }
+      try {
+        const restored = await restoreBrowserTabs();
+        if (active) setBrowserTabs(restored.length ? restored : await listBrowserTabs());
+      } catch (reason) {
+        if (!active) return;
+        try { setBrowserTabs(await listBrowserTabs()); } catch { setBrowserTabs([]); }
+        const detail = typeof reason === "string" ? reason : reason && typeof reason === "object" && "message" in reason ? String(reason.message) : "";
+        setError(detail || (language === "ar" ? "تعذرت استعادة جلسة المتصفح" : "Could not restore browser session"));
+      }
     })();
     return () => { active = false; unlistenUpdated?.(); unlistenClosed?.(); };
   }, []);
@@ -1033,10 +1045,19 @@ function BrowserView({ language }: { language: Language }) {
     } finally { setBusy(false); }
   };
   const closeTab = async (label: string) => {
-    try { await closeBrowserTab(label); } catch { /* tab may already be closing */ }
+    try { await closeBrowserTab(label); }
+    catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); }
   };
   const focusTab = async (label: string) => {
-    try { await focusBrowserTab(label); } catch { /* backend event will reconcile tab state */ }
+    try {
+      const focused = await focusBrowserTab(label);
+      if (!focused) throw new Error(language === "ar" ? "تعذر إعادة فتح التبويب" : "Could not reopen browser tab");
+      setBrowserTabs((current) => current.map((tab) => ({ ...tab, active: tab.label === label })));
+      setError("");
+    } catch (reason) {
+      const detail = typeof reason === "string" ? reason : reason && typeof reason === "object" && "message" in reason ? String(reason.message) : "";
+      setError(detail || (language === "ar" ? "تعذر إعادة فتح التبويب" : "Could not reopen browser tab"));
+    }
   };
   const quickSites = [
     { name: "YouTube", url: "https://www.youtube.com" },

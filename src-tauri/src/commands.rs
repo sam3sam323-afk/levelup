@@ -172,6 +172,15 @@ fn is_browser_window_label(label: &str) -> bool {
     (1..=8).any(|slot| label == format!("nexus-browser-{slot}"))
 }
 
+fn reveal_browser_window(window: &WebviewWindow) -> Result<(), CommandError> {
+    if window.is_minimized().map_err(|error| CommandError::manager(error.to_string()))? {
+        window.unminimize().map_err(|error| CommandError::manager(error.to_string()))?;
+    }
+    window.show().map_err(|error| CommandError::manager(error.to_string()))?;
+    window.set_focus().map_err(|error| CommandError::manager(error.to_string()))?;
+    Ok(())
+}
+
 fn create_browser_window(
     app: &AppHandle,
     state: &AppState,
@@ -238,13 +247,13 @@ fn create_browser_window(
             let other = format!("nexus-browser-{slot}");
             if other != label { if let Some(other_window) = app.get_webview_window(&other) { let _ = other_window.hide(); } }
         }
-        let _ = window.set_focus();
+        let _ = reveal_browser_window(&window);
     }
     window.on_window_event(move |event| {
         if matches!(event, tauri::WindowEvent::CloseRequested { .. }) && !shutting_down.load(std::sync::atomic::Ordering::SeqCst) {
             if let Ok(tabs) = remove_browser_tab_record(&event_app, &tabs_lock, &event_tab_label) {
                 if let Some(active) = tabs.iter().find(|tab| tab.active) {
-                    if let Some(window) = event_app.get_webview_window(&active.label) { let _ = window.show(); let _ = window.set_focus(); }
+                    if let Some(window) = event_app.get_webview_window(&active.label) { let _ = reveal_browser_window(&window); }
                     let _ = event_app.emit("browser://tab-updated", active);
                 }
             }
@@ -310,8 +319,7 @@ pub fn focus_browser_tab(app: AppHandle, state: State<'_, AppState>, label: Stri
         let other = format!("nexus-browser-{slot}");
         if other != label { if let Some(window) = app.get_webview_window(&other) { let _ = window.hide(); } }
     }
-    window.show().map_err(|error| CommandError::manager(error.to_string()))?;
-    window.set_focus().map_err(|error| CommandError::manager(error.to_string()))?;
+    reveal_browser_window(&window)?;
     let tabs = activate_browser_tab_record(&app, &state, &label)?;
     if let Some(tab) = tabs.iter().find(|tab| tab.label == label) { let _ = app.emit("browser://tab-updated", tab); }
     Ok(true)
@@ -328,7 +336,7 @@ pub fn close_browser_tab(app: AppHandle, state: State<'_, AppState>, label: Stri
         let _ = app.emit("browser://closed", &label);
     }
     if let Some(active) = load_browser_tabs(&app)?.into_iter().find(|tab| tab.active) {
-        if let Some(window) = app.get_webview_window(&active.label) { let _ = window.show(); let _ = window.set_focus(); }
+        if let Some(window) = app.get_webview_window(&active.label) { let _ = reveal_browser_window(&window); }
         let _ = app.emit("browser://tab-updated", &active);
     }
     Ok(true)
