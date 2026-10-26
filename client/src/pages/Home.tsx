@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
   ArrowDownToLine,
@@ -491,6 +491,8 @@ export default function Home() {
 
   useEffect(() => {
     let active = true;
+    const pendingProgress = new Map<string, DownloadProgressEvent>();
+    let progressFrame: number | null = null;
     const cleanups: Array<() => void> = [];
     void (async () => {
       const runtime = await isTauriRuntime();
@@ -511,16 +513,39 @@ export default function Home() {
         const item = taskToItem(task);
         return items.some((current) => current.id === item.id) ? items.map((current) => current.id === item.id ? { ...current, ...item } : current) : [item, ...items];
       });
-      const updateProgress = (event: DownloadProgressEvent) => setDownloads((items) => items.map((current) => current.id === event.taskId ? {
-        ...current,
-        progress: Math.round(event.progress),
-        downloaded: formatBytes(event.downloadedBytes),
-        size: formatBytes(event.totalBytes),
-        speed: formatSpeed(event.speedBytesPerSecond),
-        eta: formatEta(event.etaSeconds),
-        state: event.state === "paused" ? "paused" : event.state === "failed" ? "error" : event.state === "completed" ? "completed" : "downloading",
-        name: event.filename || current.name,
-      } : current));
+      const flushProgress = () => {
+        progressFrame = null;
+        if (!pendingProgress.size) return;
+        const batch = [...pendingProgress.values()];
+        pendingProgress.clear();
+        const batchById = new Map(batch.map((event) => [event.taskId, event]));
+        setDownloads((items) => {
+          let changed = false;
+          const nextItems = items.map((current) => {
+            const event = batchById.get(current.id);
+            if (!event) return current;
+            const next = {
+              ...current,
+              progress: Math.round(event.progress),
+              downloaded: formatBytes(event.downloadedBytes),
+              size: formatBytes(event.totalBytes),
+              speed: formatSpeed(event.speedBytesPerSecond),
+              eta: formatEta(event.etaSeconds),
+              state: event.state === "paused" ? "paused" : event.state === "failed" ? "error" : event.state === "completed" ? "completed" : "downloading",
+              name: event.filename || current.name,
+            } satisfies DownloadItem;
+            const isSame = next.progress === current.progress && next.downloaded === current.downloaded && next.size === current.size && next.speed === current.speed && next.eta === current.eta && next.state === current.state && next.name === current.name;
+            if (isSame) return current;
+            changed = true;
+            return next;
+          });
+          return changed ? nextItems : items;
+        });
+      };
+      const updateProgress = (event: DownloadProgressEvent) => {
+        pendingProgress.set(event.taskId, event);
+        if (progressFrame === null) progressFrame = window.requestAnimationFrame(flushProgress);
+      };
       const failed = (event: { taskId: string; error?: string }) => setDownloads((items) => items.map((current) => current.id === event.taskId ? { ...current, state: "error", eta: event.error || "Failed" } : current));
       for (const eventName of ["download://started", "download://completed", "download://paused", "download://resumed"]) {
         const cleanup = await listenTauri<TauriDownloadTask>(eventName, upsertTask);
@@ -535,6 +560,8 @@ export default function Home() {
     });
     return () => {
       active = false;
+      pendingProgress.clear();
+      if (progressFrame !== null) window.cancelAnimationFrame(progressFrame);
       cleanups.forEach((cleanup) => cleanup());
     };
   }, []);
@@ -693,7 +720,7 @@ export default function Home() {
               <section className="stat-grid"><StatCard icon={<ArrowDownToLine />} label={t.activeDownloads} value={String(activeCount).padStart(2, "0")} hint={t.activeSub} color="cyan" /><StatCard icon={<CheckCircle2 />} label={t.completed} value={String(completedCount).padStart(2, "0")} hint={t.completedSub} color="purple" /><StatCard icon={<HardDrive />} label={t.totalStored} value="485.9 GB" hint={t.totalStoredSub} color="pink" /><StatCard icon={<Gauge />} label={t.currentSpeed} value={`${totalSpeed.toFixed(1)} MB/s`} hint={t.previewOnly} color="amber" /></section>
 
               <section className="queue-panel panel"><div className="panel-heading"><div><div className="panel-title"><span className="live-dot" /> {t.queue}</div><p>{t.queueSub}</p></div><button className="text-button" onClick={() => { setActiveNav("downloads"); setFilter("all"); }}>{t.viewAll} <ArrowUpRight size={14} /></button></div><QueueToolbar language={language} search={search} setSearch={setSearch} filter={filter} setFilter={setFilter} sort={sort} setSort={setSort} />
-                <div className="queue-list">{visibleDownloads.slice(0, activeNav === "home" ? 4 : undefined).map((item) => <LazyDownloadRow key={item.id} item={item} language={language} selected={selectedId === item.id} onSelect={() => setSelectedId(item.id)} onToggle={() => toggleState(item.id)} onRemove={() => removeItem(item.id)} />)}</div>{visibleDownloads.length === 0 ? <EmptyState language={language} /> : null}</section>
+                <div className="queue-list">{visibleDownloads.slice(0, activeNav === "home" ? 4 : undefined).map((item) => <MemoLazyDownloadRow key={item.id} item={item} language={language} selected={selectedId === item.id} onSelect={() => setSelectedId(item.id)} onToggle={() => toggleState(item.id)} onRemove={() => removeItem(item.id)} />)}</div>{visibleDownloads.length === 0 ? <EmptyState language={language} /> : null}</section>
             </>}
             </div>
           </div>
@@ -742,7 +769,7 @@ function LazyDownloadRow(props: DownloadRowProps) {
     return () => observer.disconnect();
   }, [isVisible]);
 
-  if (isVisible) return <DownloadRow {...props} />;
+  if (isVisible) return <MemoDownloadRow {...props} />;
   return <article ref={placeholderRef} className="download-row download-row--placeholder" aria-hidden="true"><span /><div><span /><span /><i /></div><span /><span /></article>;
 }
 
@@ -750,6 +777,10 @@ function DownloadRow({ item, language, selected, onSelect, onToggle, onRemove }:
   const t = copy[language];
   return <article className={`download-row ${selected ? "selected" : ""}`} onClick={onSelect}><div className={`file-icon ${item.accent}`}><CategoryIcon type={item.type} /></div><div className="download-main"><div className="download-line"><strong title={item.name}>{item.name}</strong><span className={`state-pill ${item.state}`}>{statusLabel(item.state, language)}</span></div><div className="download-meta"><span>{item.engine}</span><i /> <span>{item.downloaded} / {item.size}</span><i /> <span>{item.added}</span></div><div className="row-progress"><span className={`progress-fill ${item.accent}`} style={{ width: `${item.progress}%` }} /></div><div className="row-bottom"><span>{item.progress}% {t.progress.toLowerCase()}</span><span>{item.state === "completed" ? t.noTime : item.eta}</span></div></div><div className="download-speed"><strong>{item.speed}</strong><span>{item.state === "completed" ? "—" : t.speed}</span></div><div className="row-actions"><button aria-label={item.state === "downloading" ? t.pause : t.resume} onClick={(event) => { event.stopPropagation(); onToggle(); }}>{item.state === "downloading" ? <Pause size={15} /> : <Play size={15} />}</button><button aria-label={t.cancel} onClick={(event) => { event.stopPropagation(); onRemove(); }}><Trash2 size={15} /></button></div></article>;
 }
+
+const areDownloadRowPropsEqual = (previous: DownloadRowProps, next: DownloadRowProps) => previous.item === next.item && previous.language === next.language && previous.selected === next.selected;
+const MemoDownloadRow = memo(DownloadRow, areDownloadRowPropsEqual);
+const MemoLazyDownloadRow = memo(LazyDownloadRow, areDownloadRowPropsEqual);
 
 function DetailMetric({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) { return <div className="detail-metric"><span>{icon} {label}</span><strong>{value}</strong></div>; }
 function CategoryIcon({ type }: { type: Category }) { const Icon = iconForCategory(type); return <Icon size={21} strokeWidth={1.7} />; }
