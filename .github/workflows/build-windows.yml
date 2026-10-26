@@ -81,7 +81,13 @@ jobs:
 
       - name: Check frontend
         shell: pwsh
-        run: pnpm check
+        run: |
+          pnpm check
+          pnpm test
+
+      - name: Test Rust backend
+        shell: pwsh
+        run: cargo test --manifest-path src-tauri/Cargo.toml
 
       - name: Build Tauri Windows bundle
         shell: pwsh

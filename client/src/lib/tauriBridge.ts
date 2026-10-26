@@ -1,6 +1,7 @@
 import { invoke as tauriInvoke, isTauri as isTauriApp } from "@tauri-apps/api/core";
 import { listen as tauriListen } from "@tauri-apps/api/event";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 
 export type TauriEngine = "yt-dlp" | "aria2c";
 export type DownloadQuality = "best" | "1080p" | "720p" | "480p" | "audio-320" | "audio-192" | "audio-128";
@@ -114,9 +115,29 @@ export async function openBrowserWindow(rawUrl: string): Promise<boolean> {
     center: true,
   });
   browserWindow = child;
-  await new Promise<void>((resolve, reject) => {
-    child.once("tauri://created", () => resolve());
-    child.once("tauri://error", (event) => reject(event));
-  });
-  return true;
+  try {
+    await new Promise<void>((resolve, reject) => {
+      child.once("tauri://created", () => resolve());
+      child.once("tauri://error", (event) => reject(event));
+    });
+    return true;
+  } catch (error) {
+    if (browserWindow === child) browserWindow = null;
+    throw error;
+  }
+}
+
+export async function minimizeAppWindow(): Promise<void> {
+  if (!isTauriApp()) return;
+  await getCurrentWindow().minimize();
+}
+
+export async function toggleAppWindowMaximize(): Promise<void> {
+  if (!isTauriApp()) return;
+  await getCurrentWindow().toggleMaximize();
+}
+
+export async function closeAppWindow(): Promise<void> {
+  if (!isTauriApp()) return;
+  await getCurrentWindow().close();
 }

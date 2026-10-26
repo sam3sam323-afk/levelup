@@ -6,7 +6,7 @@ mod models;
 mod process_manager;
 
 use commands::{
-    cancel_download, get_default_download_dir, get_download, get_engine_status, get_system_drives, list_downloads,
+    cancel_download, get_default_download_dir, get_download, get_engine_status, get_system_drives, list_downloads, remove_download,
     open_file_location, pause_download, resume_download, start_download, AppState,
 };
 use download_manager::DownloadManager;
@@ -27,7 +27,11 @@ pub fn run() {
             let store = app.store("level-up-nexus.json")?;
             if let Some(value) = store.get("downloads") {
                 if let Ok(tasks) = serde_json::from_value::<Vec<DownloadTask>>(value) {
-                    let _ = app.state::<AppState>().downloads.restore(tasks);
+                    let downloads = &app.state::<AppState>().downloads;
+                    downloads.restore(tasks).map_err(std::io::Error::other)?;
+                    let restored = serde_json::to_value(downloads.list().map_err(std::io::Error::other)?)?;
+                    store.set("downloads", restored);
+                    store.save()?;
                 }
             }
             Ok(())
@@ -37,6 +41,7 @@ pub fn run() {
             pause_download,
             resume_download,
             cancel_download,
+            remove_download,
             get_download,
             list_downloads,
             get_default_download_dir,

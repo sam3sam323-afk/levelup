@@ -76,6 +76,16 @@ fn sidecar_args(app: &AppHandle, task: &DownloadTask) -> Result<Vec<String>, Com
     let directory = task.download_dir.to_string_lossy().to_string();
     match task.engine {
         EngineType::YtDlp => {
+            let output_template = task.options.output_template.as_deref().unwrap_or("%(title)s.%(ext)s");
+            if output_template.trim().is_empty()
+                || output_template.len() > 256
+                || output_template.contains('/')
+                || output_template.contains('\\')
+                || output_template.contains("..")
+                || output_template.chars().any(char::is_control)
+            {
+                return Err(CommandError::validation("output template must be a safe file name template"));
+            }
             let resource_dir = app.path().resource_dir().map_err(|error| CommandError::manager(error.to_string()))?;
             let ffmpeg_dir = resource_dir.join("binaries").to_string_lossy().to_string();
             let mut args = vec![
@@ -91,7 +101,7 @@ fn sidecar_args(app: &AppHandle, task: &DownloadTask) -> Result<Vec<String>, Com
                 "-P".into(),
                 directory,
                 "-o".into(),
-                "%(title)s.%(ext)s".into(),
+                output_template.to_string(),
             ];
             args.push(if task.options.playlist.unwrap_or(false) { "--yes-playlist".into() } else { "--no-playlist".into() });
             if task.options.playlist.unwrap_or(false) {
@@ -135,10 +145,28 @@ fn spawn_task(
     processes: ProcessManager,
     task: DownloadTask,
 ) -> Result<DownloadTask, CommandError> {
+    let previous_state = task.state.clone();
     let starting = downloads.transition(&task.task_id, DownloadState::Starting).map_err(CommandError::manager)?;
-    persist_tasks(&app, &downloads)?;
-    let args = sidecar_args(&app, &starting)?;
-    let command = app.shell().sidecar(sidecar_name(&starting.engine)).map_err(|error| CommandError::manager(error.to_string()))?;
+    if let Err(error) = persist_tasks(&app, &downloads) {
+        let _ = downloads.transition(&task.task_id, previous_state);
+        return Err(error);
+    }
+    let args = match sidecar_args(&app, &starting) {
+        Ok(args) => args,
+        Err(error) => {
+            let _ = downloads.transition(&task.task_id, DownloadState::Failed);
+            let _ = persist_tasks(&app, &downloads);
+            return Err(error);
+        }
+    };
+    let command = match app.shell().sidecar(sidecar_name(&starting.engine)) {
+        Ok(command) => command,
+        Err(error) => {
+            let _ = downloads.transition(&task.task_id, DownloadState::Failed);
+            let _ = persist_tasks(&app, &downloads);
+            return Err(CommandError::manager(error.to_string()));
+        }
+    };
     let (mut receiver, child) = match command.args(args).spawn() {
         Ok(result) => result,
         Err(error) => {
@@ -149,8 +177,8 @@ fn spawn_task(
     };
     processes.insert(task.task_id.clone(), child).map_err(CommandError::manager)?;
     let started = downloads.transition(&task.task_id, DownloadState::Downloading).map_err(CommandError::manager)?;
-    persist_tasks(&app, &downloads)?;
-    app.emit(events::DOWNLOAD_STARTED, &started).map_err(|error| CommandError::manager(error.to_string()))?;
+    let _ = persist_tasks(&app, &downloads);
+    let _ = app.emit(events::DOWNLOAD_STARTED, &started);
 
     let app_handle = app.clone();
     let task_id = task.task_id.clone();
@@ -159,6 +187,7 @@ fn spawn_task(
     let processes_for_task = processes.clone();
     tauri::async_runtime::spawn(async move {
         let mut last_progress_emit = Instant::now() - Duration::from_secs(1);
+        let mut exit_code: Option<i32> = None;
         while let Some(event) = receiver.recv().await {
             match event {
                 CommandEvent::Stdout(bytes) => {
@@ -200,6 +229,7 @@ fn spawn_task(
                     if let Ok(current) = downloads_for_task.get(&task_id) {
                         if current.options.playlist.unwrap_or(false) {
                             let failed = downloads_for_task.mark_playlist_item_failed(&task_id, error.clone()).ok();
+                            let _ = downloads_for_task.transition(&task_id, DownloadState::Failed);
                             let _ = persist_tasks(&app_handle, &downloads_for_task);
                             let _ = app_handle.emit(events::DOWNLOAD_FAILED, serde_json::json!({ "taskId": task_id, "error": error, "playlistItem": failed.and_then(|task| task.playlist_current_index) }));
                         } else {
@@ -209,12 +239,27 @@ fn spawn_task(
                         }
                     }
                 }
+                CommandEvent::Terminated(payload) => exit_code = payload.code,
                 _ => {}
             }
         }
         let _ = processes_for_task.remove(&task_id);
         if let Ok(current) = downloads_for_task.get(&task_id) {
-            if !matches!(current.state, DownloadState::Paused | DownloadState::Cancelled | DownloadState::Failed) {
+            if current.state == DownloadState::Downloading && exit_code != Some(0) {
+                let reason = format!("download engine exited unsuccessfully (code: {:?})", exit_code);
+                if current.options.playlist.unwrap_or(false) {
+                    let failed = downloads_for_task.mark_playlist_item_failed(&task_id, reason.clone()).ok();
+                    let _ = downloads_for_task.transition(&task_id, DownloadState::Failed);
+                    let _ = app_handle.emit(events::DOWNLOAD_FAILED, serde_json::json!({ "taskId": task_id, "error": reason, "playlistItem": failed.and_then(|task| task.playlist_current_index) }));
+                } else {
+                    let _ = downloads_for_task.transition(&task_id, DownloadState::Failed);
+                    let _ = app_handle.emit(events::DOWNLOAD_FAILED, serde_json::json!({ "taskId": task_id, "error": reason }));
+                }
+                let _ = persist_tasks(&app_handle, &downloads_for_task);
+            } else if current.state == DownloadState::Downloading {
+                if current.options.playlist.unwrap_or(false) {
+                    let _ = downloads_for_task.mark_playlist_item_completed(&task_id);
+                }
                 let next_playlist_index = if current.options.playlist.unwrap_or(false) {
                     match (current.playlist_current_index, current.playlist_total) {
                         (Some(index), Some(total)) if index < total => Some(index + 1),
@@ -257,8 +302,11 @@ pub fn start_download(
     let options = options.unwrap_or_default();
     let task = state.downloads.insert(DownloadTask::queued(url.trim().to_string(), engine, directory, options))
         .map_err(CommandError::manager)?;
-    app.emit(events::DOWNLOAD_QUEUED, &task).map_err(|error| CommandError::manager(error.to_string()))?;
-    persist_tasks(&app, &state.downloads)?;
+    if let Err(error) = persist_tasks(&app, &state.downloads) {
+        let _ = state.downloads.remove(&task.task_id);
+        return Err(error);
+    }
+    let _ = app.emit(events::DOWNLOAD_QUEUED, &task);
     spawn_task(app, state.downloads.clone(), state.processes.clone(), task)
 }
 
@@ -287,9 +335,13 @@ fn parse_aria2c_progress(line: &str) -> Option<(f64, u64, Option<u64>, u64, Opti
     let percent_end = line.find("%)")?;
     let open = line[..percent_end].rfind('(')?;
     let progress = line[open + 1..percent_end].parse::<f64>().ok()?;
+    let byte_pair = line[..open].split_whitespace().last().unwrap_or("");
+    let (downloaded, total) = byte_pair.split_once('/')
+        .map(|(downloaded, total)| (parse_human_bytes(downloaded), parse_human_bytes(total)))
+        .unwrap_or((Some(0), None));
     let speed = line.split("DL:").nth(1).and_then(|value| value.split_whitespace().next()).map(parse_rate).unwrap_or(0);
     let eta = line.split("ETA:").nth(1).and_then(|value| value.split(|character: char| character == ']' || character.is_whitespace()).next()).and_then(parse_eta);
-    Some((progress, 0, None, speed, eta, None, None, None, DownloadState::Downloading))
+    Some((progress, downloaded.unwrap_or(0), total, speed, eta, None, None, None, DownloadState::Downloading))
 }
 
 fn parse_optional_u64(value: &str) -> Option<u64> {
@@ -310,8 +362,46 @@ fn parse_rate(value: &str) -> u64 {
     (number * multiplier) as u64
 }
 
+fn parse_human_bytes(value: &str) -> Option<u64> {
+    let normalized = value.trim().trim_end_matches(')');
+    let split_at = normalized.find(|character: char| character.is_ascii_alphabetic()).unwrap_or(normalized.len());
+    let number = normalized[..split_at].parse::<f64>().ok()?;
+    let unit = normalized[split_at..].to_ascii_lowercase();
+    let multiplier = match unit.as_str() {
+        "kib" | "ki" => 1024_f64,
+        "mib" | "mi" => 1024_f64.powi(2),
+        "gib" | "gi" => 1024_f64.powi(3),
+        "kb" | "k" => 1000_f64,
+        "mb" | "m" => 1000_f64.powi(2),
+        "gb" | "g" => 1000_f64.powi(3),
+        "b" | "" => 1_f64,
+        _ => return None,
+    };
+    Some((number * multiplier) as u64)
+}
+
 fn parse_eta(value: &str) -> Option<u64> {
     if value == "NA" || value == "--" || value.is_empty() { return None; }
+    if value.contains('h') || value.contains('m') || value.contains('s') {
+        let mut number = String::new();
+        let mut total = 0_u64;
+        for character in value.chars() {
+            if character.is_ascii_digit() {
+                number.push(character);
+                continue;
+            }
+            if number.is_empty() { continue; }
+            let part = number.parse::<u64>().ok()?;
+            total += match character {
+                'h' => part * 3600,
+                'm' => part * 60,
+                's' => part,
+                _ => { number.clear(); continue; }
+            };
+            number.clear();
+        }
+        return if number.is_empty() { Some(total) } else { None };
+    }
     let parts: Vec<u64> = value.split(':').filter_map(|part| part.parse().ok()).collect();
     match parts.as_slice() {
         [seconds] => Some(*seconds),
@@ -323,8 +413,21 @@ fn parse_eta(value: &str) -> Option<u64> {
 
 #[tauri::command]
 pub fn pause_download(app: AppHandle, state: State<'_, AppState>, task_id: String) -> Result<DownloadTask, CommandError> {
-    state.processes.kill(&task_id).map_err(CommandError::manager)?;
-    let task = state.downloads.transition(&task_id, DownloadState::Paused).map_err(CommandError::manager)?;
+    let current = state.downloads.get(&task_id).map_err(CommandError::manager)?;
+    if current.state != DownloadState::Downloading {
+        return Err(CommandError::manager("only active downloads can be paused"));
+    }
+    state.downloads.transition(&task_id, DownloadState::Paused).map_err(CommandError::manager)?;
+    if let Err(error) = state.processes.kill(&task_id) {
+        let latest = state.downloads.get(&task_id).map_err(CommandError::manager)?;
+        if latest.state == DownloadState::Paused {
+            let _ = state.downloads.transition(&task_id, DownloadState::Downloading);
+        } else if matches!(latest.state, DownloadState::Completed | DownloadState::Failed) {
+            return Ok(latest);
+        }
+        return Err(CommandError::manager(error));
+    }
+    let task = state.downloads.get(&task_id).map_err(CommandError::manager)?;
     persist_tasks(&app, &state.downloads)?;
     app.emit(events::DOWNLOAD_PAUSED, &task).map_err(|error| CommandError::manager(error.to_string()))?;
     Ok(task)
@@ -343,11 +446,46 @@ pub fn resume_download(app: AppHandle, state: State<'_, AppState>, task_id: Stri
 
 #[tauri::command]
 pub fn cancel_download(app: AppHandle, state: State<'_, AppState>, task_id: String) -> Result<DownloadTask, CommandError> {
-    let _ = state.processes.kill(&task_id);
-    let task = state.downloads.transition(&task_id, DownloadState::Cancelled).map_err(CommandError::manager)?;
+    let current = state.downloads.get(&task_id).map_err(CommandError::manager)?;
+    if matches!(current.state, DownloadState::Downloading | DownloadState::Starting) {
+        state.downloads.transition(&task_id, DownloadState::Cancelled).map_err(CommandError::manager)?;
+        if let Err(error) = state.processes.kill(&task_id) {
+            let _ = state.downloads.transition(&task_id, DownloadState::Downloading);
+            return Err(CommandError::manager(error));
+        }
+    } else if current.state == DownloadState::Paused {
+        state.downloads.transition(&task_id, DownloadState::Cancelled).map_err(CommandError::manager)?;
+    } else if current.state == DownloadState::Queued {
+        state.downloads.transition(&task_id, DownloadState::Cancelled).map_err(CommandError::manager)?;
+    } else if current.state == DownloadState::Cancelled {
+        return Ok(current);
+    } else if matches!(current.state, DownloadState::Failed | DownloadState::Completed) {
+        return Err(CommandError::manager("download cannot be cancelled in its current state"));
+    }
+    let task = state.downloads.get(&task_id).map_err(CommandError::manager)?;
     persist_tasks(&app, &state.downloads)?;
     app.emit(events::DOWNLOAD_CANCELLED, &task).map_err(|error| CommandError::manager(error.to_string()))?;
     Ok(task)
+}
+
+#[tauri::command]
+pub fn remove_download(app: AppHandle, state: State<'_, AppState>, task_id: String) -> Result<(), CommandError> {
+    let current = state.downloads.get(&task_id).map_err(CommandError::manager)?;
+    if matches!(current.state, DownloadState::Downloading | DownloadState::Starting) {
+        state.downloads.transition(&task_id, DownloadState::Cancelled).map_err(CommandError::manager)?;
+        if let Err(error) = state.processes.kill(&task_id) {
+            let _ = state.downloads.transition(&task_id, DownloadState::Downloading);
+            return Err(CommandError::manager(error));
+        }
+    } else if current.state == DownloadState::Paused {
+        state.downloads.transition(&task_id, DownloadState::Cancelled).map_err(CommandError::manager)?;
+    }
+    let removed = state.downloads.remove(&task_id).map_err(CommandError::manager)?;
+    if let Err(error) = persist_tasks(&app, &state.downloads) {
+        let _ = state.downloads.insert(removed);
+        return Err(error);
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -404,4 +542,28 @@ pub fn open_file_location(path: String) -> Result<(), CommandError> {
     }
     #[cfg(not(target_os = "windows"))]
     Err(CommandError::manager("file location is currently implemented for Windows x64 only"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{parse_aria2c_progress, parse_human_bytes, parse_rate};
+
+    #[test]
+    fn parses_aria2_progress_and_transfer_sizes() {
+        let parsed = parse_aria2c_progress("[#abc 1.2MiB/2.4MiB(50%) CN:4 DL:512KiB ETA:00m01s]").unwrap();
+        assert_eq!(parsed.0, 50.0);
+        assert_eq!(parsed.1, (1.2_f64 * 1024_f64 * 1024_f64) as u64);
+        assert_eq!(parsed.2, Some((2.4_f64 * 1024_f64 * 1024_f64) as u64));
+        assert_eq!(parsed.3, 512 * 1024);
+        assert_eq!(parsed.4, Some(1));
+        assert_eq!(parsed.8, super::DownloadState::Downloading);
+    }
+
+    #[test]
+    fn parses_supported_human_byte_units() {
+        assert_eq!(parse_human_bytes("1.5GiB"), Some((1.5_f64 * 1024_f64.powi(3)) as u64));
+        assert_eq!(parse_human_bytes("2MB"), Some(2_000_000));
+        assert_eq!(parse_human_bytes("unknown"), None);
+        assert_eq!(parse_rate("512KiB/s"), 512 * 1024);
+    }
 }

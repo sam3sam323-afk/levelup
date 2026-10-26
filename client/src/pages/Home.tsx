@@ -7,7 +7,6 @@ import {
   Check,
   CheckCircle2,
   ChevronDown,
-  Clipboard,
   Clock3,
   CloudDownload,
   Copy,
@@ -22,7 +21,6 @@ import {
   Languages,
   LayoutGrid,
   Link2,
-  ListFilter,
   Menu,
   MonitorDown,
   MoreHorizontal,
@@ -49,6 +47,9 @@ import {
   isTauriRuntime,
   listenTauri,
   openBrowserWindow,
+  minimizeAppWindow,
+  toggleAppWindowMaximize,
+  closeAppWindow,
   type DownloadProgressEvent,
   type DownloadTask as TauriDownloadTask,
   type DownloadQuality,
@@ -140,6 +141,7 @@ const copy = {
     resume: "Resume",
     resumeDownload: "Resume download",
     cancel: "Cancel",
+    remove: "Remove",
     openFolder: "Open folder",
     copyLink: "Copy link",
     previewOnly: "Desktop runtime required",
@@ -175,6 +177,8 @@ const copy = {
     downloadAdded: "Download started in the real queue",
     downloadError: "Unable to start the real download",
     copied: "Link copied",
+    copyFailed: "Could not copy the link",
+    removed: "Download removed",
     desktopRequired: "Open the Windows desktop app to use real downloads",
     routeVideo: "yt-dlp · stream & merge",
     routeFile: "aria2c · multi-connection",
@@ -245,6 +249,7 @@ const copy = {
     resume: "استئناف",
     resumeDownload: "استئناف التنزيل",
     cancel: "إلغاء",
+    remove: "إزالة",
     openFolder: "فتح المجلد",
     copyLink: "نسخ الرابط",
     previewOnly: "يتطلب تطبيق سطح المكتب",
@@ -280,6 +285,8 @@ const copy = {
     downloadAdded: "بدأ التنزيل ضمن الطابور الحقيقي",
     downloadError: "تعذر بدء التنزيل الحقيقي",
     copied: "تم نسخ الرابط",
+    copyFailed: "تعذر نسخ الرابط",
+    removed: "تمت إزالة التنزيل",
     desktopRequired: "افتح تطبيق Windows لاستخدام التنزيلات الحقيقية",
     routeVideo: "yt-dlp · سحب ودمج البث",
     routeFile: "aria2c · اتصال متعدد",
@@ -474,8 +481,6 @@ export default function Home() {
   const [filter, setFilter] = useState<"all" | DownloadState>("all");
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState("newest");
-  const [autoOrganize, setAutoOrganize] = useState(true);
-  const [clipboardWatch, setClipboardWatch] = useState(true);
   const [modal, setModal] = useState<"add" | null>(null);
   const [toast, setToast] = useState("");
   const [mobileNav, setMobileNav] = useState(false);
@@ -498,16 +503,6 @@ export default function Home() {
       if (!active) return;
       setTauriMode(runtime);
       if (!runtime) return;
-      const [directory, tasks] = await Promise.all([
-        invokeTauri<string>("get_default_download_dir"),
-        invokeTauri<TauriDownloadTask[]>("list_downloads"),
-      ]);
-      if (!active) return;
-      if (directory) setDefaultDownloadDir(directory);
-      if (tasks?.length) {
-        setDownloads(tasks.map(taskToItem));
-        setSelectedId(tasks[0].taskId);
-      }
       const upsertTask = (task: TauriDownloadTask) => setDownloads((items) => {
         const item = taskToItem(task);
         return items.some((current) => current.id === item.id) ? items.map((current) => current.id === item.id ? { ...current, ...item } : current) : [item, ...items];
@@ -532,7 +527,7 @@ export default function Home() {
               speed: formatSpeed(event.speedBytesPerSecond),
               speedBytesPerSecond: event.speedBytesPerSecond,
               eta: formatEta(event.etaSeconds),
-              state: event.state === "paused" ? "paused" : event.state === "failed" ? "error" : event.state === "completed" ? "completed" : "downloading",
+              state: event.state === "paused" ? "paused" : event.state === "failed" || event.state === "cancelled" ? "error" : event.state === "completed" ? "completed" : "downloading",
               name: event.filename || current.name,
               playlistItems: event.playlistItems ?? current.playlistItems,
               playlistCurrentIndex: event.playlistCurrentIndex ?? current.playlistCurrentIndex,
@@ -552,10 +547,12 @@ export default function Home() {
       };
       const failed = (event: { taskId: string; error?: string; playlistItem?: number }) => setDownloads((items) => items.map((current) => {
         if (current.id !== event.taskId) return current;
-        if (event.playlistItem) return { ...current, playlistItems: current.playlistItems.map((item) => item.index === event.playlistItem ? { ...item, state: "failed", speedBytesPerSecond: 0, etaSeconds: undefined } : item) };
-        return { ...current, state: "error", eta: event.error || "Failed" };
+        const playlistItems = event.playlistItem
+          ? current.playlistItems.map((item) => item.index === event.playlistItem ? { ...item, state: "failed" as const, speedBytesPerSecond: 0, etaSeconds: undefined } : item)
+          : current.playlistItems;
+        return { ...current, playlistItems, state: "error", speed: "0 B/s", speedBytesPerSecond: 0, eta: event.error || "Failed" };
       }));
-      for (const eventName of ["download://started", "download://completed", "download://paused", "download://resumed"]) {
+      for (const eventName of ["download://queued", "download://started", "download://completed", "download://paused", "download://resumed", "download://cancelled"]) {
         const cleanup = await listenTauri<TauriDownloadTask>(eventName, upsertTask);
         if (cleanup) cleanups.push(cleanup);
       }
@@ -563,6 +560,20 @@ export default function Home() {
       if (progressCleanup) cleanups.push(progressCleanup);
       const failedCleanup = await listenTauri<{ taskId: string; error?: string; playlistItem?: number }>("download://failed", failed);
       if (failedCleanup) cleanups.push(failedCleanup);
+      const [directory, tasks] = await Promise.all([
+        invokeTauri<string>("get_default_download_dir"),
+        invokeTauri<TauriDownloadTask[]>("list_downloads"),
+      ]);
+      if (!active) return;
+      if (directory) setDefaultDownloadDir(directory);
+      if (tasks?.length) {
+        setDownloads((current) => {
+          const merged = new Map(tasks.map((task) => [task.taskId, taskToItem(task)]));
+          current.forEach((item) => merged.set(item.id, item));
+          return [...merged.values()];
+        });
+        setSelectedId((current) => current || tasks[0].taskId);
+      }
     })().catch((error: unknown) => {
       console.error("[LEVEL UP NEXUS] Failed to initialize the Tauri desktop bridge", error);
       if (active) setTauriMode(isTauriRuntime());
@@ -638,20 +649,39 @@ export default function Home() {
 
   const removeItem = async (id: string) => {
     if (tauriMode) {
-      const item = downloads.find((current) => current.id === id);
-      if (item && (item.state === "downloading" || item.state === "paused")) {
-        try { await invokeTauri("cancel_download", { task_id: id }); } catch { /* task may already be closed */ }
+      try {
+        await invokeTauri("remove_download", { task_id: id });
+      } catch (error) {
+        console.error("[LEVEL UP NEXUS] Could not remove download", error);
+        setToast(t.downloadError);
+        return;
       }
     }
     setDownloads((items) => items.filter((item) => item.id !== id));
     if (selectedId === id) setSelectedId(downloads.find((item) => item.id !== id)?.id ?? "");
-    setToast(t.cancel);
+    setToast(t.removed);
   };
 
   const copyLink = async () => {
     if (!selected) return;
-    try { await navigator.clipboard.writeText(selected.url); } catch { /* visual-only fallback */ }
-    setToast(t.copied);
+    try {
+      await navigator.clipboard.writeText(selected.url);
+      setToast(t.copied);
+    } catch {
+      const textArea = document.createElement("textarea");
+      textArea.value = selected.url;
+      textArea.style.position = "fixed";
+      textArea.style.opacity = "0";
+      document.body.appendChild(textArea);
+      textArea.select();
+      const copied = document.execCommand("copy");
+      textArea.remove();
+      setToast(copied ? t.copied : t.copyFailed);
+    }
+  };
+
+  const runWindowAction = async (action: () => Promise<void>) => {
+    try { await action(); } catch (error) { console.error("[LEVEL UP NEXUS] Window action failed", error); }
   };
 
   const openSelectedFolder = async () => {
@@ -678,7 +708,7 @@ export default function Home() {
     <div className={`nexus-app ${theme}`} dir={language === "ar" ? "rtl" : "ltr"}>
       <header className="window-bar">
         <div className="window-brand"><NexusMark size="small" /><span>{t.appName} <b>{t.nexus}</b></span><em>{t.version}</em></div>
-        <div className="window-actions"><span className="simulation-pill"><span className="pulse-dot" /> {tauriMode ? t.liveMode : t.desktopRequired}</span><button className="theme-toggle" onClick={() => setTheme(theme === "dark" ? "light" : "dark")} aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"} title={theme === "dark" ? "Light mode" : "Dark mode"}>{theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}<span>{theme === "dark" ? "Light" : "Dark"}</span></button><button onClick={() => setLanguage(language === "en" ? "ar" : "en")} aria-label="Toggle language"><Languages size={16} /><span>{language === "en" ? "العربية" : "English"}</span></button><button className="window-icon" aria-label="Minimize">−</button><button className="window-icon" aria-label="Maximize">□</button><button className="window-icon close" aria-label="Close">×</button></div>
+        <div className="window-actions"><span className="simulation-pill"><span className="pulse-dot" /> {tauriMode ? t.liveMode : t.desktopRequired}</span><button className="theme-toggle" onClick={() => setTheme(theme === "dark" ? "light" : "dark")} aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"} title={theme === "dark" ? "Light mode" : "Dark mode"}>{theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}<span>{theme === "dark" ? "Light" : "Dark"}</span></button><button onClick={() => setLanguage(language === "en" ? "ar" : "en")} aria-label="Toggle language"><Languages size={16} /><span>{language === "en" ? "العربية" : "English"}</span></button><button className="window-icon" aria-label="Minimize" onClick={() => void runWindowAction(minimizeAppWindow)}>−</button><button className="window-icon" aria-label="Maximize" onClick={() => void runWindowAction(toggleAppWindowMaximize)}>□</button><button className="window-icon close" aria-label="Close" onClick={() => void runWindowAction(closeAppWindow)}>×</button></div>
       </header>
 
       <div className="app-shell">
@@ -691,11 +721,6 @@ export default function Home() {
               {navItems.map((item) => <button key={item.id} className={`nav-item ${activeNav === item.id ? "active" : ""}`} onClick={() => { setActiveNav(item.id); setMobileNav(false); }}><span className="nav-item-icon"><SectionIcon id={item.id} /></span><span>{item.label}</span>{item.count ? <b>{item.count}</b> : null}</button>)}
             </nav>
             <div className="nav-divider" />
-            <span className="nav-caption">{t.preferences.toUpperCase()}</span>
-            <div className="toggle-list">
-              <button className="toggle-row" onClick={() => setAutoOrganize(!autoOrganize)}><span><ListFilter size={16} />{t.autoOrganize}</span><i className={autoOrganize ? "on" : ""}><b /></i></button>
-              <button className="toggle-row" onClick={() => setClipboardWatch(!clipboardWatch)}><span><Clipboard size={16} />{t.clipboardWatch}</span><i className={clipboardWatch ? "on" : ""}><b /></i></button>
-            </div>
           </div>
           <div className="sidebar-footer"><div className="secure-badge"><ShieldCheck size={15} /><span>{t.secure}</span><span className="badge-dot" /></div><div className="signature"><span>DESIGNED FOR</span><strong>TARIK</strong><small>NEXUS ENGINE</small></div></div>
         </aside>
@@ -766,7 +791,7 @@ function LazyDownloadRow(props: DownloadRowProps) {
 function DownloadRow({ item, language, selected, onSelect, onToggle, onRemove }: DownloadRowProps) {
   const t = copy[language];
   const added = item.added === "Completed" ? t.done : item.added === "Live" ? t.live : item.added;
-  return <article className={`download-row ${selected ? "selected" : ""}`} onClick={onSelect}><div className={`file-icon ${item.accent}`}><CategoryIcon type={item.type} /></div><div className="download-main"><div className="download-line"><strong title={item.name}>{item.name}</strong><span className={`state-pill ${item.state}`}>{statusLabel(item.state, language)}</span></div><div className="download-meta"><span>{item.engine}</span><i /> <span>{item.downloaded} / {item.size}</span><i /> <span>{added}</span></div><div className="row-progress"><span className={`progress-fill ${item.accent}`} style={{ width: `${item.progress}%` }} /></div><div className="row-bottom"><span>{item.progress}% {t.progress.toLowerCase()}</span><span>{item.state === "completed" ? t.noTime : item.eta}</span></div></div><div className="download-speed"><strong>{item.speed}</strong><span>{item.state === "completed" ? "—" : t.speed}</span></div><div className="row-actions"><button aria-label={item.state === "downloading" ? t.pause : t.resume} onClick={(event) => { event.stopPropagation(); onToggle(); }}>{item.state === "downloading" ? <Pause size={15} /> : <Play size={15} />}</button><button aria-label={t.cancel} onClick={(event) => { event.stopPropagation(); onRemove(); }}><Trash2 size={15} /></button></div></article>;
+  return <article className={`download-row ${selected ? "selected" : ""}`} onClick={onSelect}><div className={`file-icon ${item.accent}`}><CategoryIcon type={item.type} /></div><div className="download-main"><div className="download-line"><strong title={item.name}>{item.name}</strong><span className={`state-pill ${item.state}`}>{statusLabel(item.state, language)}</span></div><div className="download-meta"><span>{item.engine}</span><i /> <span>{item.downloaded} / {item.size}</span><i /> <span>{added}</span></div><div className="row-progress"><span className={`progress-fill ${item.accent}`} style={{ width: `${item.progress}%` }} /></div><div className="row-bottom"><span>{item.progress}% {t.progress.toLowerCase()}</span><span>{item.state === "completed" ? t.noTime : item.eta}</span></div></div><div className="download-speed"><strong>{item.speed}</strong><span>{item.state === "completed" ? "—" : t.speed}</span></div><div className="row-actions">{item.state === "downloading" || item.state === "paused" ? <button aria-label={item.state === "downloading" ? t.pause : t.resume} onClick={(event) => { event.stopPropagation(); onToggle(); }}>{item.state === "downloading" ? <Pause size={15} /> : <Play size={15} />}</button> : null}<button aria-label={t.remove} onClick={(event) => { event.stopPropagation(); onRemove(); }}><Trash2 size={15} /></button></div></article>;
 }
 
 const areDownloadRowPropsEqual = (previous: DownloadRowProps, next: DownloadRowProps) => previous.item === next.item && previous.language === next.language && previous.selected === next.selected;
