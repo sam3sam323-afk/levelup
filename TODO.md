@@ -83,5 +83,5 @@
 - [x] فصل اعتماديات Electron عن تطبيق Expo بــ`desktop/runtime` manifest لا يحتوي إلا على `electron-updater`، وتجهيز مدخلات الحزمة قبل البناء مع الإبقاء على موارد Chromium وملفات المحركات والتراخيص.
 - [x] ضبط إطار نافذة Windows بلون خلفية Nexus وإزالة اللون/الحد الافتراضي أعلى النافذة؛ وإظهار فتح الملف أو مجلده للتنزيل المكتمل عبر IPC يتحقق من المسارات ولا يكشفها عبر Relay.
 - [ ] تشغيل `pnpm check`, `pnpm lint`, `pnpm test` ثم بناء Windows x64 NSIS v1.1.0، ومقارنة حجم Setup مع إصدار المرحلة الثانية البالغ 369,673,218 بايت.
-- [ ] دفع التغييرات النهائية إلى مستودع GitHub المصرح به `sam3sam323-afk/levelup` وإلى `main` canonical الخاص بمشروع Manus لحفظ checkpoint؛ لا تُرفع GitHub Release إلا بطلب منفصل.
+- [x] دفع source commit `23b2d56` إلى `main` canonical الخاص بالمشروع وإلى فرع GitHub `levelup-v1.1.0-phase3` في `sam3sam323-afk/levelup`؛ حُفظ تاريخ `main` الحالي الذي يحتوي بوت Telegram دون استبدال أو دمج قسري. لم تُنشر GitHub Release.
 - [ ] اختبار Auto-Updater end-to-end يحتاج GitHub Release منشورًا للوجهة المحددة؛ لا يُنشأ هذا الإصدار ضمن البناء أو الدفع دون موافقة منفصلة.
