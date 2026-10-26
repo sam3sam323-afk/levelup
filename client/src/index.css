@@ -241,3 +241,23 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .nexus-app.light .theme-toggle { color: #9a6a16; }
 .theme-toggle { border-radius: 7px; }
 @media (prefers-reduced-motion: reduce) { .view-transition { animation: none; } }
+
+/* Chromium/WebView2 performance layer: animate composited properties and skip offscreen work. */
+button, .nav-item, .app-button, .pair-button, .filter-tabs button, .download-row, .detail-actions button, .text-button, .theme-toggle {
+  -webkit-tap-highlight-color: transparent;
+  transition-property: color, background-color, border-color, box-shadow, opacity, transform;
+  transition-duration: 180ms;
+  transition-timing-function: cubic-bezier(.22, 1, .36, 1);
+}
+button:active, .app-button:active, .pair-button:active, .detail-actions button:active { transform: translateY(1px) scale(.985); }
+.download-row { content-visibility: auto; contain-intrinsic-size: 92px; will-change: transform; }
+.queue-list { contain: layout style paint; }
+.download-row--placeholder { pointer-events: none; contain: strict; background: rgba(15, 19, 39, .52); }
+.download-row--placeholder > span:first-child { width: 38px; height: 38px; border-radius: 11px; background: linear-gradient(100deg, rgba(137, 150, 207, .08), rgba(137, 150, 207, .2), rgba(137, 150, 207, .08)); background-size: 220% 100%; animation: nexusShimmer 1.3s ease-in-out infinite; }
+.download-row--placeholder > div { display: grid; gap: 9px; min-width: 0; flex: 1; }
+.download-row--placeholder > div > span { display: block; width: min(42%, 220px); height: 9px; border-radius: 99px; background: rgba(137, 150, 207, .16); }
+.download-row--placeholder > div > span:nth-child(2) { width: 72%; height: 6px; opacity: .65; }
+.download-row--placeholder > div > i { display: block; width: 100%; height: 4px; border-radius: 99px; background: rgba(137, 150, 207, .1); }
+.download-row--placeholder > span:last-child { width: 46px; height: 9px; border-radius: 99px; background: rgba(137, 150, 207, .12); }
+@keyframes nexusShimmer { 0% { background-position: 100% 0; opacity: .55; } 50% { background-position: 0 0; opacity: 1; } 100% { background-position: -100% 0; opacity: .55; } }
+@media (prefers-reduced-motion: reduce) { .download-row--placeholder > span:first-child { animation: none; } }

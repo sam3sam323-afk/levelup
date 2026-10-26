@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
   ArrowDownToLine,
@@ -693,7 +693,7 @@ export default function Home() {
               <section className="stat-grid"><StatCard icon={<ArrowDownToLine />} label={t.activeDownloads} value={String(activeCount).padStart(2, "0")} hint={t.activeSub} color="cyan" /><StatCard icon={<CheckCircle2 />} label={t.completed} value={String(completedCount).padStart(2, "0")} hint={t.completedSub} color="purple" /><StatCard icon={<HardDrive />} label={t.totalStored} value="485.9 GB" hint={t.totalStoredSub} color="pink" /><StatCard icon={<Gauge />} label={t.currentSpeed} value={`${totalSpeed.toFixed(1)} MB/s`} hint={t.previewOnly} color="amber" /></section>
 
               <section className="queue-panel panel"><div className="panel-heading"><div><div className="panel-title"><span className="live-dot" /> {t.queue}</div><p>{t.queueSub}</p></div><button className="text-button" onClick={() => { setActiveNav("downloads"); setFilter("all"); }}>{t.viewAll} <ArrowUpRight size={14} /></button></div><QueueToolbar language={language} search={search} setSearch={setSearch} filter={filter} setFilter={setFilter} sort={sort} setSort={setSort} />
-                <div className="queue-list">{visibleDownloads.slice(0, activeNav === "home" ? 4 : undefined).map((item) => <DownloadRow key={item.id} item={item} language={language} selected={selectedId === item.id} onSelect={() => setSelectedId(item.id)} onToggle={() => toggleState(item.id)} onRemove={() => removeItem(item.id)} />)}</div>{visibleDownloads.length === 0 ? <EmptyState language={language} /> : null}</section>
+                <div className="queue-list">{visibleDownloads.slice(0, activeNav === "home" ? 4 : undefined).map((item) => <LazyDownloadRow key={item.id} item={item} language={language} selected={selectedId === item.id} onSelect={() => setSelectedId(item.id)} onToggle={() => toggleState(item.id)} onRemove={() => removeItem(item.id)} />)}</div>{visibleDownloads.length === 0 ? <EmptyState language={language} /> : null}</section>
             </>}
             </div>
           </div>
@@ -718,7 +718,35 @@ function QueueToolbar({ language, search, setSearch, filter, setFilter, sort, se
   return <div className="queue-toolbar"><div className="search-field"><Search size={15} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={t.search} /></div><div className="filter-tabs">{([["all", t.all], ["downloading", t.active], ["paused", t.paused], ["completed", t.done]] as const).map(([value, label]) => <button key={value} className={filter === value ? "active" : ""} onClick={() => setFilter(value)}>{label}</button>)}</div><label className="sort-field"><span>{t.sort}</span><select value={sort} onChange={(event) => setSort(event.target.value)}><option value="newest">{t.newest}</option><option value="name">{t.name}</option><option value="size">{t.size}</option></select><ChevronDown size={13} /></label></div>;
 }
 
-function DownloadRow({ item, language, selected, onSelect, onToggle, onRemove }: { item: DownloadItem; language: Language; selected: boolean; onSelect: () => void; onToggle: () => void; onRemove: () => void }) {
+type DownloadRowProps = { item: DownloadItem; language: Language; selected: boolean; onSelect: () => void; onToggle: () => void; onRemove: () => void };
+
+function LazyDownloadRow(props: DownloadRowProps) {
+  const [isVisible, setIsVisible] = useState(false);
+  const placeholderRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    if (isVisible) return;
+    const target = placeholderRef.current;
+    if (!target || typeof IntersectionObserver === "undefined") {
+      setIsVisible(true);
+      return;
+    }
+    const root = target.closest(".content-scroll");
+    const observer = new IntersectionObserver(([entry]) => {
+      if (entry.isIntersecting) {
+        setIsVisible(true);
+        observer.disconnect();
+      }
+    }, { root, rootMargin: "240px 0px" });
+    observer.observe(target);
+    return () => observer.disconnect();
+  }, [isVisible]);
+
+  if (isVisible) return <DownloadRow {...props} />;
+  return <article ref={placeholderRef} className="download-row download-row--placeholder" aria-hidden="true"><span /><div><span /><span /><i /></div><span /><span /></article>;
+}
+
+function DownloadRow({ item, language, selected, onSelect, onToggle, onRemove }: DownloadRowProps) {
   const t = copy[language];
   return <article className={`download-row ${selected ? "selected" : ""}`} onClick={onSelect}><div className={`file-icon ${item.accent}`}><CategoryIcon type={item.type} /></div><div className="download-main"><div className="download-line"><strong title={item.name}>{item.name}</strong><span className={`state-pill ${item.state}`}>{statusLabel(item.state, language)}</span></div><div className="download-meta"><span>{item.engine}</span><i /> <span>{item.downloaded} / {item.size}</span><i /> <span>{item.added}</span></div><div className="row-progress"><span className={`progress-fill ${item.accent}`} style={{ width: `${item.progress}%` }} /></div><div className="row-bottom"><span>{item.progress}% {t.progress.toLowerCase()}</span><span>{item.state === "completed" ? t.noTime : item.eta}</span></div></div><div className="download-speed"><strong>{item.speed}</strong><span>{item.state === "completed" ? "—" : t.speed}</span></div><div className="row-actions"><button aria-label={item.state === "downloading" ? t.pause : t.resume} onClick={(event) => { event.stopPropagation(); onToggle(); }}>{item.state === "downloading" ? <Pause size={15} /> : <Play size={15} />}</button><button aria-label={t.cancel} onClick={(event) => { event.stopPropagation(); onRemove(); }}><Trash2 size={15} /></button></div></article>;
 }
