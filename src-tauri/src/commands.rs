@@ -531,7 +531,7 @@ pub async fn browser_get_video_formats(
     let (label, requested_url) = validate_browser_request(&window, &state, &url, &session_token)?;
     let command = app.shell().sidecar("yt-dlp")
         .map_err(|error| CommandError::manager(format!("cannot resolve yt-dlp sidecar: {error}")))?;
-    let args = ["--dump-single-json", "--no-warnings", "--no-playlist", "--skip-download", "--no-progress", "--no-call-home", requested_url.as_str()];
+    let args = ["--ignore-config", "--dump-single-json", "--no-warnings", "--no-playlist", "--skip-download", "--no-progress", "--no-call-home", requested_url.as_str()];
     let (mut receiver, mut child) = command.args(args).spawn()
         .map_err(|error| CommandError::manager(format!("cannot start yt-dlp format scan: {error}")))?;
     let capture = async {
@@ -655,8 +655,9 @@ fn sidecar_args_with_ffmpeg_dir(task: &DownloadTask, ffmpeg_dir: Option<&std::pa
                 .ok_or_else(|| CommandError::manager("FFmpeg resource directory is unavailable"))?
                 .to_string_lossy()
                 .to_string();
-            // yt-dlp --print implies quiet and can imply simulation; keep progress and real downloads explicit.
+            // Ignore per-user config so --skip-download cannot turn app downloads into no-ops; keep real download and progress explicit below.
             let mut args = vec![
+                "--ignore-config".into(),
                 "--newline".into(),
                 "--progress".into(),
                 "--progress-delta".into(),
@@ -1010,7 +1011,7 @@ fn inspect_ytdlp_output_file(download_dir: &Path, reported_path: Option<&Path>) 
     let reported_path = reported_path.ok_or_else(|| "yt-dlp exited successfully but did not report the saved file path".to_string())?;
     let download_root = download_dir.canonicalize().map_err(|error| format!("cannot access the download folder: {error}"))?;
     let candidate = if reported_path.is_absolute() { reported_path.to_path_buf() } else { download_root.join(reported_path) };
-    let output_file = candidate.canonicalize().map_err(|error| format!("yt-dlp reported success but the output file is missing: {error}"))?;
+    let output_file = candidate.canonicalize().map_err(|error| format!("yt-dlp reported success but the output file '{}' is missing: {error}", candidate.display()))?;
     if !path_is_within(&download_root, &output_file) {
         return Err("yt-dlp output path is outside the configured download folder".into());
     }
@@ -1471,8 +1472,12 @@ mod tests {
         let args = sidecar_args_with_ffmpeg_dir(&task, Some(Path::new(r"C:\Nexus\binaries"))).unwrap();
         let path_index = args.iter().position(|argument| argument.as_str() == "-P").unwrap();
         assert_eq!(args[path_index + 1], expected);
+        assert!(args.iter().any(|argument| argument.as_str() == "--ignore-config"));
         assert!(args.iter().any(|argument| argument.as_str() == "--progress"));
         assert!(args.iter().any(|argument| argument.as_str() == "--no-simulate"));
+        let print_index = args.iter().position(|argument| argument.as_str() == "--print").unwrap();
+        let real_download_index = args.iter().position(|argument| argument.as_str() == "--no-simulate").unwrap();
+        assert!(real_download_index > print_index, "--no-simulate must follow --print");
         assert!(args.iter().any(|argument| argument.as_str() == "after_move:NEXUS_OUTPUT_PATH:%(filepath)s"));
         assert_eq!(args.last().map(String::as_str), Some("https://www.youtube.com/watch?v=test"));
     }

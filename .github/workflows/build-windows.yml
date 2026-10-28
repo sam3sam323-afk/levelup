@@ -79,6 +79,10 @@ jobs:
         shell: pwsh
         run: pnpm verify:sidecars
 
+      - name: Smoke-test real yt-dlp download
+        shell: pwsh
+        run: node scripts/yt-dlp-smoke-test.mjs
+
       - name: Check frontend
         shell: pwsh
         run: |
