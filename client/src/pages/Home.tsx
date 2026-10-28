@@ -4,7 +4,6 @@ import {
   AlertCircle,
   ArrowDownToLine,
   ArrowUpRight,
-  AudioLines,
   Check,
   CheckCircle2,
   ChevronDown,
@@ -16,15 +15,13 @@ import {
   FileVideo2,
   FolderOpen,
   Gauge,
+  Globe,
   HardDrive,
   Headphones,
   Home as HomeIcon,
   Languages,
-  LayoutGrid,
   Link2,
   Menu,
-  MonitorDown,
-  MoreHorizontal,
   Pause,
   Play,
   Plus,
@@ -38,6 +35,7 @@ import {
   Trash2,
   Volume2,
   VolumeX,
+  Wrench,
   Upload,
   Video,
   Wifi,
@@ -92,7 +90,7 @@ function playUiSfx(kind: "action" | "complete" | "copy") {
 }
 
 type Language = "en" | "ar";
-type NavId = "home" | "downloads" | "library" | "browser" | "utilities";
+type NavId = "home" | "downloads" | "library" | "browser" | "utilities" | "settings";
 type DownloadState = "downloading" | "paused" | "completed" | "error" | "cancelled";
 type Category = "Video" | "Audio" | "Archive" | "Other";
 
@@ -118,11 +116,131 @@ type DownloadItem = {
   playlistTotal?: number;
 };
 
+const demoPreviewBaseTime = Date.now();
+const demoPreviewDownloads: DownloadItem[] = [
+  {
+    id: "demo-forest",
+    name: "Forest_Environment.zip",
+    url: "https://example.com/files/forest.zip",
+    location: "D:\\Downloads\\Game Assets Pack",
+    type: "Archive",
+    engine: "aria2c",
+    progress: 78,
+    size: "1.6 GB / 2.1 GB",
+    sizeBytes: 2.1 * 1024 ** 3,
+    downloaded: "1.6 GB",
+    speed: "12.4 MB/s",
+    speedBytesPerSecond: 12.4 * 1024 ** 2,
+    eta: "45s",
+    state: "downloading",
+    accent: "cyan",
+    createdAt: new Date(demoPreviewBaseTime).toISOString(),
+    playlistItems: [],
+  },
+  {
+    id: "demo-models",
+    name: "Character_Models.zip",
+    url: "https://example.com/files/character-models.zip",
+    location: "D:\\Downloads\\Game Assets Pack",
+    type: "Archive",
+    engine: "yt-dlp",
+    progress: 42,
+    size: "1.4 GB / 3.3 GB",
+    sizeBytes: 3.3 * 1024 ** 3,
+    downloaded: "1.4 GB",
+    speed: "8.1 MB/s",
+    speedBytesPerSecond: 8.1 * 1024 ** 2,
+    eta: "2m 10s",
+    state: "downloading",
+    accent: "purple",
+    createdAt: new Date(demoPreviewBaseTime - 60_000).toISOString(),
+    playlistItems: [],
+  },
+  {
+    id: "demo-textures",
+    name: "Textures_HighRes.zip",
+    url: "https://example.com/files/textures-highres.zip",
+    location: "D:\\Downloads\\Textures",
+    type: "Archive",
+    engine: "aria2c",
+    progress: 12,
+    size: "2.8 GB / 23.3 GB",
+    sizeBytes: 23.3 * 1024 ** 3,
+    downloaded: "2.8 GB",
+    speed: "3.6 MB/s",
+    speedBytesPerSecond: 3.6 * 1024 ** 2,
+    eta: "6m 32s",
+    state: "downloading",
+    accent: "pink",
+    createdAt: new Date(demoPreviewBaseTime - 120_000).toISOString(),
+    playlistItems: [],
+  },
+  {
+    id: "demo-tools",
+    name: "Productivity_Tools_Setup.exe",
+    url: "https://example.com/files/productivity-tools.exe",
+    location: "D:\\Downloads\\Installers",
+    type: "Other",
+    engine: "aria2c",
+    progress: 100,
+    size: "892 MB",
+    sizeBytes: 892 * 1024 ** 2,
+    downloaded: "892 MB",
+    speed: "0 B/s",
+    speedBytesPerSecond: 0,
+    eta: "—",
+    state: "completed",
+    accent: "cyan",
+    createdAt: new Date(demoPreviewBaseTime - 180_000).toISOString(),
+    playlistItems: [],
+  },
+  {
+    id: "demo-paper",
+    name: "Research_Paper.pdf",
+    url: "https://example.com/files/research-paper.pdf",
+    location: "D:\\Downloads\\Documents",
+    type: "Other",
+    engine: "yt-dlp",
+    progress: 100,
+    size: "6.4 MB",
+    sizeBytes: 6.4 * 1024 ** 2,
+    downloaded: "6.4 MB",
+    speed: "0 B/s",
+    speedBytesPerSecond: 0,
+    eta: "—",
+    state: "completed",
+    accent: "amber",
+    createdAt: new Date(demoPreviewBaseTime - 240_000).toISOString(),
+    playlistItems: [],
+  },
+  {
+    id: "demo-trailer",
+    name: "Movie_Trailer_4K.mp4",
+    url: "https://example.com/videos/movie-trailer-4k.mp4",
+    location: "D:\\Downloads\\Videos",
+    type: "Video",
+    engine: "yt-dlp",
+    progress: 18,
+    size: "3.9 GB",
+    sizeBytes: 3.9 * 1024 ** 3,
+    downloaded: "701 MB",
+    speed: "1.2 MB/s",
+    speedBytesPerSecond: 1.2 * 1024 ** 2,
+    eta: "12m 6s",
+    state: "error",
+    accent: "purple",
+    createdAt: new Date(demoPreviewBaseTime - 300_000).toISOString(),
+    playlistItems: [],
+  },
+];
+
 const copy = {
   en: {
     appName: "LEVEL UP",
     nexus: "NEXUS",
     version: "WINDOWS DESKTOP / 2.4.0",
+    brandTitle: "Level Up Nexus",
+    brandTagline: "DOWNLOAD  ·  CONVERT  ·  ENJOY",
     workspaceSection: "WORKSPACE",
     designedFor: "DESIGNED FOR",
     nexusEngine: "NEXUS ENGINE",
@@ -137,9 +255,14 @@ const copy = {
     localWorkspace: "LOCAL WORKSPACE",
     dashboard: "Dashboard",
     downloads: "Downloads",
+    downloadsSub: "Manage downloads powered by yt-dlp and aria2c.",
+    demoPreview: "DEMO PREVIEW · illustrative data only",
+    demoReadOnly: "Demo-only item. Actions are disabled.",
+    urlFieldLabel: "URL (YouTube, direct link, etc.)",
     library: "Library",
-    browser: "Browser",
-    utilities: "Utilities",
+    browser: "Nexus Browser",
+    utilities: "Media Tools",
+    settings: "Settings",
     preferences: "Preferences",
     autoOrganize: "Auto organize",
     clipboardWatch: "Clipboard watch",
@@ -161,8 +284,12 @@ const copy = {
     queue: "Download queue",
     queueSub: "Real-time download status",
     viewAll: "View all",
+    totalDownloads: "Total downloads",
+    totalSpeed: "Total speed",
+    actions: "Actions",
     details: "Download details",
-    selectHint: "Select a file to inspect its orbit",
+    selectedDownload: "Selected download",
+    selectHint: "Select a download to view its details",
     storage: "Storage orbit",
     storageSub: "Local workspace capacity",
     categories: "Categories",
@@ -172,7 +299,7 @@ const copy = {
     paused: "Paused",
     done: "Completed",
     failed: "Failed",
-    search: "Search files…",
+    search: "Search downloads…",
     sort: "Sort",
     newest: "Newest first",
     name: "Name",
@@ -190,15 +317,20 @@ const copy = {
     copyLink: "Copy link",
     previewOnly: "Desktop runtime required",
     liveMode: "LIVE ENGINE",
+    liveEngines: "Live engines",
+    online: "online",
+    arabicLanguage: "Arabic",
+    englishLanguage: "English",
     engine: "Routed engine",
     saveTo: "Save to",
     savePlaceholder: "Absolute folder path",
+    savePathHint: "Edit the destination path directly; folder browsing is not enabled yet.",
     pasteLinkFirst: "Paste a link to determine its download engine.",
     enterUrl: "Enter a download link.",
     invalidUrl: "Use an http, https, or magnet link.",
     enterAbsolutePath: "Enter an absolute Windows folder path.",
     addToQueue: "Add to queue",
-    playlist: "Download full playlist",
+    playlist: "Download full YouTube playlist (if available)",
     playlistHint: "Download every item from a YouTube playlist",
     routePlaylist: "yt-dlp · full playlist",
     playlistProgress: "Playlist item progress",
@@ -225,6 +357,7 @@ const copy = {
     browserSecureHint: "Downloads start only after your click. Web pages cannot access the other desktop commands.",
     utilitiesTitle: "Media utilities",
     utilitiesSub: "Useful actions for your local downloads and engines.",
+    settingsSub: "Adjust optional interface behaviors and privacy controls.",
     ready: "Desktop tools",
     pasteClipboard: "Paste link from clipboard",
     openDownloadsFolder: "Open downloads folder",
@@ -267,6 +400,8 @@ const copy = {
     appName: "ليفل أب",
     nexus: "نيكسوس",
     version: "تطبيق سطح المكتب / 2.4.0",
+    brandTitle: "ليفل أب نيكسوس",
+    brandTagline: "نزّل · حوّل · استمتع",
     workspaceSection: "مساحة العمل",
     designedFor: "مصمم لـ",
     nexusEngine: "محرك نيكسوس",
@@ -281,9 +416,14 @@ const copy = {
     localWorkspace: "مساحة محلية",
     dashboard: "لوحة التحكم",
     downloads: "التنزيلات",
+    downloadsSub: "إدارة التنزيلات عبر yt-dlp وaria2c.",
+    demoPreview: "معاينة تجريبية · بيانات شكلية فقط",
+    demoReadOnly: "هذا عنصر تجريبي؛ الإجراء معطّل.",
+    urlFieldLabel: "الرابط (يوتيوب أو رابط مباشر)",
     library: "المكتبة",
-    browser: "المتصفح",
-    utilities: "الأدوات",
+    browser: "متصفح نيكسوس",
+    utilities: "أدوات الوسائط",
+    settings: "الإعدادات",
     preferences: "التفضيلات",
     autoOrganize: "تنظيم تلقائي",
     clipboardWatch: "مراقبة الحافظة",
@@ -305,8 +445,12 @@ const copy = {
     queue: "طابور التنزيلات",
     queueSub: "حالة التنزيلات الفعلية",
     viewAll: "عرض الكل",
+    totalDownloads: "إجمالي التنزيلات",
+    totalSpeed: "السرعة الإجمالية",
+    actions: "إجراءات",
     details: "تفاصيل التنزيل",
-    selectHint: "اختر ملفًا لفحص مداره",
+    selectedDownload: "التنزيل المحدد",
+    selectHint: "اختر تنزيلًا لعرض تفاصيله",
     storage: "مدار التخزين",
     storageSub: "سعة المساحة المحلية",
     categories: "التصنيفات",
@@ -316,7 +460,7 @@ const copy = {
     paused: "متوقفة",
     done: "مكتملة",
     failed: "فاشلة",
-    search: "ابحث في الملفات…",
+    search: "ابحث عن تنزيل…",
     sort: "ترتيب",
     newest: "الأحدث أولًا",
     name: "الاسم",
@@ -334,15 +478,20 @@ const copy = {
     copyLink: "نسخ الرابط",
     previewOnly: "يتطلب تطبيق سطح المكتب",
     liveMode: "محركات فعلية",
+    liveEngines: "المحركات المباشرة",
+    online: "متصل",
+    arabicLanguage: "العربية",
+    englishLanguage: "الإنجليزية",
     engine: "المحرك الموجه",
     saveTo: "الحفظ في",
     savePlaceholder: "مسار مجلد مطلق",
+    savePathHint: "عدّل مسار الحفظ مباشرة؛ اختيار المجلد غير مفعّل حاليًا.",
     pasteLinkFirst: "ألصق رابطًا لتحديد محرك التنزيل المناسب.",
     enterUrl: "أدخل رابط التنزيل.",
     invalidUrl: "استخدم رابط http أو https أو magnet.",
     enterAbsolutePath: "أدخل مسار مجلد Windows مطلقًا.",
     addToQueue: "إضافة للطابور",
-    playlist: "تنزيل قائمة التشغيل كاملة",
+    playlist: "تنزيل قائمة يوتيوب كاملة (إن أمكن)",
     playlistHint: "تنزيل جميع عناصر قائمة تشغيل يوتيوب دفعة واحدة",
     routePlaylist: "yt-dlp · قائمة تشغيل كاملة",
     playlistProgress: "تقدم عناصر قائمة التشغيل",
@@ -369,6 +518,7 @@ const copy = {
     browserSecureHint: "لا يبدأ التنزيل إلا بعد ضغطك. ولا تصل صفحات الويب إلى أوامر سطح المكتب الأخرى.",
     utilitiesTitle: "أدوات الوسائط",
     utilitiesSub: "إجراءات مفيدة للتنزيلات والمحركات المحلية.",
+    settingsSub: "تحكم بخيارات الواجهة والخصوصية الاختيارية.",
     ready: "أدوات سطح المكتب",
     pasteClipboard: "لصق رابط من الحافظة",
     openDownloadsFolder: "فتح مجلد التنزيلات",
@@ -552,9 +702,10 @@ function SectionIcon({ id }: { id: NavId }) {
   const icons: Record<NavId, LucideIcon> = {
     home: HomeIcon,
     downloads: ArrowDownToLine,
-    library: LayoutGrid,
-    browser: MonitorDown,
-    utilities: AudioLines,
+    library: FolderOpen,
+    browser: Globe,
+    utilities: Wrench,
+    settings: Settings2,
   };
   const Icon = icons[id];
   return <Icon size={17} strokeWidth={1.8} />;
@@ -582,32 +733,19 @@ function AddDownloadModal({ language, onClose, onAdd, defaultPath, initialUrl = 
     <div className="modal-backdrop" onMouseDown={onClose}>
       <form className="modal-card add-card" onSubmit={(event) => { event.preventDefault(); const url = value.trim(); if (!url) { setFormError(t.enterUrl); return; } if (!/^magnet:/i.test(url) && !/^https?:\/\//i.test(url)) { setFormError(t.invalidUrl); return; } if (savePath.trim() && !/^(?:[a-zA-Z]:[\\/]|\\\\)/.test(savePath.trim())) { setFormError(t.enterAbsolutePath); return; } if (!savePath.trim() && !defaultPath) { setFormError(t.enterAbsolutePath); return; } setFormError(""); onAdd(url, savePath, playlist, quality); }} onMouseDown={(event) => event.stopPropagation()}>
         <button type="button" className="modal-close" aria-label={t.close} onClick={onClose}><X size={18} /></button>
-        <div className="modal-kicker"><Sparkles size={14} /> {engineAvailable ? t.liveMode : tauriMode ? t.noEngines : t.previewOnly}</div>
-        <h2>{t.newDownload}</h2>
-        <p>{t.inputPlaceholder}</p>
-        <label className="field-label">{t.inputPlaceholder}</label>
+        <div className="add-modal-intro"><span className="add-modal-icon"><CloudDownload size={20} /></span><div><div className="modal-kicker"><Sparkles size={14} /> {engineAvailable ? t.liveMode : tauriMode ? t.noEngines : t.previewOnly}</div><h2>{t.newDownload}</h2></div></div>
+        <label className="field-label">{t.urlFieldLabel}</label>
         <div className="field-with-icon"><Link2 size={16} /><input autoFocus value={value} onChange={(event) => { const nextValue = event.target.value; setValue(nextValue); setFormError(""); setPlaylist(isYoutubePlaylistUrl(nextValue.trim())); }} placeholder={t.inputPlaceholder} aria-invalid={Boolean(formError)} /></div>
         {formError ? <p className="form-error" role="alert">{formError}</p> : null}
         <div className="route-preview"><span>{t.engine}</span><strong>{route}</strong></div>
         <label className="playlist-option">
           <input type="checkbox" checked={playlist} onChange={(event) => setPlaylist(event.target.checked)} />
-          <span><strong>{t.playlist}</strong><small>{t.playlistHint}</small></span>
+          <span><strong>{t.playlist}</strong></span>
         </label>
-        <label className="field-label" htmlFor="download-quality">{t.quality}</label>
-        <div className="select-with-icon">
-          <Gauge size={16} />
-          <select id="download-quality" value={quality} onChange={(event) => setQuality(event.target.value as DownloadQuality)}>
-            <option value="best">{t.qualityBest}</option>
-            <option value="1080p">{t.quality1080}</option>
-            <option value="720p">{t.quality720}</option>
-            <option value="480p">{t.quality480}</option>
-            <option value="audio-320">{t.qualityAudio320}</option>
-            <option value="audio-192">{t.qualityAudio192}</option>
-            <option value="audio-128">{t.qualityAudio128}</option>
-          </select>
+        <div className="modal-field-grid">
+          <div className="modal-field-group"><label className="field-label" htmlFor="download-quality">{t.quality}</label><div className="select-with-icon"><Gauge size={16} /><select id="download-quality" value={quality} onChange={(event) => setQuality(event.target.value as DownloadQuality)}><option value="best">{t.qualityBest}</option><option value="1080p">{t.quality1080}</option><option value="720p">{t.quality720}</option><option value="480p">{t.quality480}</option><option value="audio-320">{t.qualityAudio320}</option><option value="audio-192">{t.qualityAudio192}</option><option value="audio-128">{t.qualityAudio128}</option></select></div></div>
+          <div className="modal-field-group"><label className="field-label" htmlFor="save-download-path">{t.saveTo}</label><div className="field-with-icon"><FolderOpen size={16} /><input id="save-download-path" className="save-path-input" dir="ltr" value={savePath} onChange={(event) => setSavePath(event.target.value)} placeholder={t.savePlaceholder} aria-label={t.saveTo} /></div><small className="save-path-hint">{t.savePathHint}</small></div>
         </div>
-        <label className="field-label">{t.saveTo}</label>
-        <div className="field-with-icon"><FolderOpen size={16} /><input className="save-path-input" dir="ltr" value={savePath} onChange={(event) => setSavePath(event.target.value)} placeholder={t.savePlaceholder} aria-label={t.saveTo} /></div>
         <div className="modal-actions"><AppButton variant="secondary" onClick={onClose}>{t.close}</AppButton><AppButton type="submit" icon={<Plus size={16} />}>{t.addToQueue}</AppButton></div>
       </form>
     </div>
@@ -625,9 +763,10 @@ export default function Home() {
     catch { return "ar"; }
   });
   const t = copy[language];
-  const [activeNav, setActiveNav] = useState<NavId>("home");
+  const [activeNav, setActiveNav] = useState<NavId>("downloads");
+  const demoMode = typeof window !== "undefined" && !isTauriRuntime() && new URLSearchParams(window.location.search).get("demo") === "1";
   const [downloads, setDownloads] = useState<DownloadItem[]>([]);
-  const [selectedId, setSelectedId] = useState("");
+  const [selectedId, setSelectedId] = useState(demoMode ? demoPreviewDownloads[0].id : "");
   const [filter, setFilter] = useState<"all" | DownloadState>("all");
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState("newest");
@@ -648,7 +787,8 @@ export default function Home() {
   const [defaultDownloadDir, setDefaultDownloadDir] = useState("");
   const [engineStatus, setEngineStatus] = useState("");
   const [engineAvailability, setEngineAvailability] = useState<Record<TauriEngine, boolean>>({ "yt-dlp": false, aria2c: false });
-  const engineAvailable = Object.values(engineAvailability).some(Boolean);
+  const availableEngineCount = Object.values(engineAvailability).filter(Boolean).length;
+  const engineAvailable = availableEngineCount > 0;
   const [prefillUrl, setPrefillUrl] = useState("");
   const [quickAddUrl, setQuickAddUrl] = useState("");
   const openAddModal = (url = quickAddUrl) => {
@@ -708,10 +848,13 @@ export default function Home() {
       if (!active) return;
       setTauriMode(runtime);
       if (!runtime) return;
-      const upsertTask = (task: TauriDownloadTask) => setDownloads((items) => {
+      const upsertTask = (task: TauriDownloadTask) => {
+        setSelectedId((current) => current || task.taskId);
+        setDownloads((items) => {
         const item = taskToItem(task);
         return items.some((current) => current.id === item.id) ? items.map((current) => current.id === item.id ? { ...current, ...item } : current) : [item, ...items];
-      });
+        });
+      };
       const flushProgress = () => {
         progressFrame = null;
         if (!pendingProgress.size) return;
@@ -817,21 +960,23 @@ export default function Home() {
     return () => window.clearTimeout(timer);
   }, [toast]);
 
-  const activeCount = downloads.filter((item) => item.state === "downloading").length;
-  const completedCount = downloads.filter((item) => item.state === "completed").length;
-  const totalSpeed = downloads.filter((item) => item.state === "downloading").reduce((sum, item) => sum + item.speedBytesPerSecond, 0);
-  const totalStored = downloads.filter((item) => item.state === "completed").reduce((sum, item) => sum + item.sizeBytes, 0);
-  const selected = downloads.find((item) => item.id === selectedId) ?? downloads[0];
+  const visibleSourceDownloads = demoMode ? demoPreviewDownloads : downloads;
+  const activeCount = visibleSourceDownloads.filter((item) => item.state === "downloading").length;
+  const completedCount = visibleSourceDownloads.filter((item) => item.state === "completed").length;
+  const totalSpeed = visibleSourceDownloads.filter((item) => item.state === "downloading").reduce((sum, item) => sum + item.speedBytesPerSecond, 0);
+  const totalStored = visibleSourceDownloads.filter((item) => item.state === "completed").reduce((sum, item) => sum + item.sizeBytes, 0);
+  const selected = visibleSourceDownloads.find((item) => item.id === selectedId) ?? null;
 
   const visibleDownloads = useMemo(() => {
     const query = search.trim().toLowerCase();
-    return downloads
+    return visibleSourceDownloads
       .filter((item) => filter === "all" || item.state === filter)
       .filter((item) => !query || item.name.toLowerCase().includes(query) || item.url.toLowerCase().includes(query))
       .sort((a, b) => sort === "name" ? a.name.localeCompare(b.name, language) : sort === "size" ? b.sizeBytes - a.sizeBytes : Date.parse(b.createdAt) - Date.parse(a.createdAt));
-  }, [downloads, filter, search, sort, language]);
+  }, [visibleSourceDownloads, filter, search, sort, language]);
 
   const addDownload = async (url: string, requestedPath = defaultDownloadDir, playlist = false, quality: DownloadQuality = "best") => {
+    if (demoMode) { setToast(t.demoReadOnly); return; }
     const isAudio = /soundcloud|\.flac|\.mp3/i.test(url);
     if (!tauriMode) {
       setToast(t.desktopRequired);
@@ -860,6 +1005,7 @@ export default function Home() {
   };
 
   const toggleState = async (id: string) => {
+    if (demoMode) { setToast(t.demoReadOnly); return; }
     if (tauriMode) {
       const item = downloads.find((current) => current.id === id);
       if (!item) return;
@@ -875,6 +1021,7 @@ export default function Home() {
   };
 
   const removeItem = async (id: string) => {
+    if (demoMode) { setToast(t.demoReadOnly); return; }
     if (tauriMode) {
       try {
         await invokeTauri("remove_download", { taskId: id });
@@ -890,6 +1037,7 @@ export default function Home() {
   };
 
   const copyLink = async () => {
+    if (demoMode) { setToast(t.demoReadOnly); return; }
     if (!selected) return;
     try {
       await navigator.clipboard.writeText(selected.url);
@@ -916,6 +1064,7 @@ export default function Home() {
   };
 
   const openSelectedFolder = async () => {
+    if (demoMode) { setToast(t.demoReadOnly); return; }
     if (!selected || !tauriMode) {
       setToast(t.desktopRequired);
       return;
@@ -928,6 +1077,7 @@ export default function Home() {
   };
 
   const cancelDownload = async (id: string) => {
+    if (demoMode) { setToast(t.demoReadOnly); return; }
     if (!tauriMode) { setToast(t.desktopRequired); return; }
     try {
       const task = await invokeTauri<TauriDownloadTask>("cancel_download", { taskId: id });
@@ -970,7 +1120,6 @@ export default function Home() {
   };
 
   const navItems: { id: NavId; label: string; count?: number }[] = [
-    { id: "home", label: t.dashboard },
     { id: "downloads", label: t.downloads, count: activeCount },
     { id: "library", label: t.library },
     { id: "browser", label: t.browser },
@@ -980,30 +1129,46 @@ export default function Home() {
   return (
     <div className={`nexus-app ${theme}`} dir={language === "ar" ? "rtl" : "ltr"}>
       <header className="window-bar">
-        <div className="window-brand"><NexusMark size="small" /><span>{t.appName} <b>{t.nexus}</b></span><em>{t.version}</em></div>
-        <div className="window-actions"><span className="simulation-pill"><span className="pulse-dot" /> {engineAvailable ? t.liveMode : tauriMode ? t.noEngines : t.previewOnly}</span><button className="theme-toggle" onClick={() => setTheme(theme === "dark" ? "light" : "dark")} aria-label={theme === "dark" ? t.themeLight : t.themeDark} title={theme === "dark" ? t.themeLight : t.themeDark}>{theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}<span>{theme === "dark" ? t.themeLight : t.themeDark}</span></button><button onClick={() => setLanguage(language === "en" ? "ar" : "en")} aria-label={t.languageToggle}><Languages size={16} /><span>{language === "en" ? "العربية" : "English"}</span></button><button className="window-icon" aria-label={t.minimizeWindow} disabled={!tauriMode} title={!tauriMode ? t.windowDesktopOnly : undefined} onClick={() => void runWindowAction(minimizeAppWindow)}>−</button><button className="window-icon" aria-label={t.maximizeWindow} disabled={!tauriMode} title={!tauriMode ? t.windowDesktopOnly : undefined} onClick={() => void runWindowAction(toggleAppWindowMaximize)}>□</button><button className="window-icon close" aria-label={t.closeWindow} disabled={!tauriMode} title={!tauriMode ? t.windowDesktopOnly : undefined} onClick={() => void runWindowAction(closeAppWindow)}>×</button></div>
+        <div className="window-brand">
+          <NexusMark size="small" />
+          <span className="window-brand-copy"><strong>{t.brandTitle}</strong><small>{t.brandTagline}</small></span>
+        </div>
+        <div className="window-actions">
+          <span className={`engine-indicator ${tauriMode && availableEngineCount === 2 ? "online" : tauriMode && availableEngineCount > 0 ? "partial" : "offline"}`}>
+            <span className="engine-indicator-dot" />
+            <span>{!tauriMode ? t.previewOnly : availableEngineCount ? `${t.liveEngines}: ${availableEngineCount}/2 ${t.online}` : t.noEngines}</span>
+          </span>
+          <div className="header-segment" role="group" aria-label={language === "ar" ? "المظهر" : "Appearance"}>
+            <button type="button" className={theme === "dark" ? "active" : ""} aria-pressed={theme === "dark"} onClick={() => setTheme("dark")}><Moon size={14} />{t.themeDark}</button>
+            <button type="button" className={theme === "light" ? "active" : ""} aria-pressed={theme === "light"} onClick={() => setTheme("light")}><Sun size={14} />{t.themeLight}</button>
+          </div>
+          <div className="header-segment language-segment" role="group" aria-label={t.languageToggle}>
+            <button type="button" className={language === "ar" ? "active" : ""} aria-pressed={language === "ar"} onClick={() => setLanguage("ar")}>{t.arabicLanguage}</button>
+            <button type="button" className={language === "en" ? "active" : ""} aria-pressed={language === "en"} onClick={() => setLanguage("en")}>{t.englishLanguage}</button>
+          </div>
+          <button className="window-icon" aria-label={t.minimizeWindow} disabled={!tauriMode} title={!tauriMode ? t.windowDesktopOnly : undefined} onClick={() => void runWindowAction(minimizeAppWindow)}>−</button>
+          <button className="window-icon" aria-label={t.maximizeWindow} disabled={!tauriMode} title={!tauriMode ? t.windowDesktopOnly : undefined} onClick={() => void runWindowAction(toggleAppWindowMaximize)}>□</button>
+          <button className="window-icon close" aria-label={t.closeWindow} disabled={!tauriMode} title={!tauriMode ? t.windowDesktopOnly : undefined} onClick={() => void runWindowAction(closeAppWindow)}>×</button>
+        </div>
       </header>
 
       <div className="app-shell">
         <aside className={`sidebar ${mobileNav ? "is-open" : ""}`}>
-          <div>
-            <div className="sidebar-brand"><NexusMark /><div><strong>{t.appName}</strong><b>{t.nexus}</b></div><button className="mobile-close" onClick={() => setMobileNav(false)}><X size={18} /></button></div>
-            <div className="workspace-switch"><div className="avatar">T</div><div><strong>{t.workspace}</strong><span>{t.localWorkspace}</span></div><ChevronDown size={15} /></div>
-            <nav className="main-nav" aria-label={t.navAriaLabel}>
-              <span className="nav-caption">{t.workspaceSection}</span>
-              {navItems.map((item) => <button key={item.id} className={`nav-item ${activeNav === item.id ? "active" : ""}`} onClick={() => { setActiveNav(item.id); setMobileNav(false); }}><span className="nav-item-icon"><SectionIcon id={item.id} /></span><span>{item.label}</span>{item.count ? <b>{item.count}</b> : null}</button>)}
-            </nav>
-            <div className="nav-divider" />
+          <button className="mobile-close" aria-label={t.close} onClick={() => setMobileNav(false)}><X size={18} /></button>
+          <nav className="main-nav" aria-label={t.navAriaLabel}>
+            {navItems.map((item) => <button key={item.id} className={`nav-item ${activeNav === item.id ? "active" : ""}`} aria-current={activeNav === item.id ? "page" : undefined} onClick={() => { setActiveNav(item.id); setMobileNav(false); }}><span className="nav-item-icon"><SectionIcon id={item.id} /></span><span>{item.label}</span>{item.count ? <b>{item.count}</b> : null}</button>)}
+          </nav>
+          <div className="sidebar-footer">
+            <button className={`nav-item settings-nav ${activeNav === "settings" ? "active" : ""}`} aria-current={activeNav === "settings" ? "page" : undefined} onClick={() => { setActiveNav("settings"); setMobileNav(false); }}><span className="nav-item-icon"><Settings2 size={17} strokeWidth={1.8} /></span><span>{t.settings}</span></button>
           </div>
-          <div className="sidebar-footer"><div className="secure-badge"><ShieldCheck size={15} /><span>{t.secure}</span><span className="badge-dot" /></div><div className="signature"><span>{t.designedFor}</span><strong>TARIK</strong><small>{t.nexusEngine}</small></div></div>
         </aside>
 
         <main className="main-content">
           <div className="mobile-top"><button onClick={() => setMobileNav(true)}><Menu size={20} /></button><NexusMark size="small" /><strong>{t.nexus}</strong><button onClick={() => openAddModal()}><Plus size={19} /></button></div>
           <div className="content-scroll">
             <div key={activeNav} className="view-transition">
-            {activeNav === "browser" ? <BrowserView language={language} /> : activeNav === "utilities" ? <UtilitiesView language={language} pasteClipboardLink={pasteClipboardLink} openDownloadsFolder={openDownloadsFolder} checkEngines={checkEngines} engineStatus={engineStatus} sfxEnabled={sfxEnabled} setSfxEnabled={setSfxEnabled} clipboardSnifferEnabled={clipboardSnifferEnabled} setClipboardSnifferEnabled={setClipboardSnifferEnabled} /> : activeNav === "library" ? <LibraryView language={language} downloads={downloads} onOpen={async (item) => { setSelectedId(item.id); setActiveNav("downloads"); try { await invokeTauri("open_file_location", { path: item.location }); } catch { setToast(t.openFolder); } }} /> : <>
-              <div className="content-heading"><div><div className="eyebrow control-room-eyebrow"><span className="eyebrow-line" /> {t.controlRoom}</div><h1>{activeNav === "downloads" ? t.downloads : t.overview}</h1><p>{activeNav === "downloads" ? t.queueSub : t.overviewSub}</p></div><div className="heading-actions"><AppButton icon={<Plus size={17} />} onClick={() => openAddModal()}>{t.newDownload}</AppButton></div></div>
+            {activeNav === "downloads" ? <DownloadsView language={language} demoMode={demoMode} downloads={visibleSourceDownloads} visibleDownloads={visibleDownloads} selectedId={selectedId} filter={filter} setFilter={setFilter} search={search} setSearch={setSearch} sort={sort} setSort={setSort} activeCount={activeCount} completedCount={completedCount} pausedCount={visibleSourceDownloads.filter((item) => item.state === "paused").length} failedCount={visibleSourceDownloads.filter((item) => item.state === "error").length} totalSpeed={totalSpeed} onNewDownload={() => openAddModal()} onSelect={setSelectedId} onToggle={(id) => void toggleState(id)} onCancel={(id) => void cancelDownload(id)} onRemove={(id) => void removeItem(id)} /> : activeNav === "browser" ? <BrowserView language={language} /> : (activeNav === "utilities" || activeNav === "settings") ? <UtilitiesView language={language} settingsOnly={activeNav === "settings"} pasteClipboardLink={pasteClipboardLink} openDownloadsFolder={openDownloadsFolder} checkEngines={checkEngines} engineStatus={engineStatus} sfxEnabled={sfxEnabled} setSfxEnabled={setSfxEnabled} clipboardSnifferEnabled={clipboardSnifferEnabled} setClipboardSnifferEnabled={setClipboardSnifferEnabled} /> : activeNav === "library" ? <LibraryView language={language} downloads={downloads} onOpen={async (item) => { setSelectedId(item.id); setActiveNav("downloads"); try { await invokeTauri("open_file_location", { path: item.location }); } catch { setToast(t.openFolder); } }} /> : <>
+              <div className="content-heading"><div><div className="eyebrow control-room-eyebrow"><span className="eyebrow-line" /> {t.controlRoom}</div><h1>{t.overview}</h1><p>{t.overviewSub}</p></div><div className="heading-actions"><AppButton icon={<Plus size={17} />} onClick={() => openAddModal()}>{t.newDownload}</AppButton></div></div>
               <section className="hero-card"><div className="hero-glow" /><div className="hero-copy"><div className="hero-chip"><span className="pulse-dot" /> {engineAvailable ? t.connected : tauriMode ? t.noEngines : t.previewOnly}</div><h2>{t.heroTitle}<br /><span>{t.heroTitleAccent}</span></h2><p>{t.inputPlaceholder}</p><div className="quick-add"><Link2 size={17} /><input value={quickAddUrl} onChange={(event) => setQuickAddUrl(event.target.value)} placeholder={t.inputPlaceholder} onKeyDown={(event) => { if (event.key === "Enter" && quickAddUrl.trim()) void addDownload(quickAddUrl.trim()); }} /><button onClick={() => openAddModal()}><Plus size={17} /> {t.newDownload}</button></div><div className="hero-meta"><span><Zap size={13} /> {t.routeVideo}</span><span><ShieldCheck size={13} /> {engineAvailable ? t.liveMode : tauriMode ? t.noEngines : t.previewOnly}</span></div></div><div className="hero-art"><div className="orbit orbit-one" /><div className="orbit orbit-two" /><div className="hero-logo"><NexusMark size="large" /></div><div className="float-stat float-stat-top"><span>{t.queueHealth}</span><strong>{activeCount}</strong></div><div className="float-stat float-stat-bottom"><Activity size={13} /><span>{formatSpeed(totalSpeed)}</span><b>{activeCount > 0 ? t.live : "—"}</b></div></div></section>
 
               <section className="stat-grid"><StatCard icon={<ArrowDownToLine />} label={t.activeDownloads} value={String(activeCount).padStart(2, "0")} hint={t.activeSub} color="cyan" onClick={() => { setActiveNav("downloads"); setFilter("downloading"); }} /><StatCard icon={<CheckCircle2 />} label={t.completed} value={String(completedCount).padStart(2, "0")} hint={t.completedSub} color="purple" onClick={() => { setActiveNav("downloads"); setFilter("completed"); }} /><StatCard icon={<HardDrive />} label={t.totalStored} value={formatBytes(totalStored)} hint={t.totalStoredSub} color="pink" onClick={() => setActiveNav("library")} /><StatCard icon={<Gauge />} label={t.currentSpeed} value={formatSpeed(totalSpeed)} hint={engineAvailable ? t.liveMode : tauriMode ? t.noEngines : t.previewOnly} color="amber" onClick={() => { setActiveNav("downloads"); setFilter("downloading"); }} /></section>
@@ -1015,7 +1180,31 @@ export default function Home() {
           </div>
         </main>
 
-        <aside className="right-rail"><div className="rail-section"><div className="rail-title"><span>{t.details}</span><MoreHorizontal size={17} /></div>{selected ? <><div className={`detail-file-icon ${selected.accent}`}><CategoryIcon type={selected.type} /></div><h3 className="detail-name">{selected.name}</h3><span className="detail-url">{selected.url}</span><div className="detail-progress"><div className="detail-progress-head"><span>{t.progress}</span><strong>{selected.progress}%</strong></div><div className="progress-track"><span className={`progress-fill ${selected.accent}`} style={{ width: `${selected.progress}%` }} /></div></div><div className="detail-grid"><DetailMetric icon={<Gauge size={14} />} label={t.speed} value={selected.speed} /><DetailMetric icon={<Clock3 size={14} />} label={t.eta} value={selected.state === "completed" ? t.noTime : selected.eta} /><DetailMetric icon={<HardDrive size={14} />} label={t.size} value={selected.size} /><DetailMetric icon={<Zap size={14} />} label={t.engine} value={selected.engine} /></div><PlaylistProgressList items={selected.playlistItems} language={language} currentIndex={selected.playlistCurrentIndex} taskState={selected.state} onToggle={() => toggleState(selected.id)} /><div className="detail-actions">{selected.state === "paused" ? <button onClick={() => toggleState(selected.id)}><Play size={15} /> {t.resumeDownload}</button> : null}{selected.state === "downloading" || selected.state === "paused" ? <button onClick={() => void cancelDownload(selected.id)}><X size={15} /> {t.cancelDownload}</button> : null}<button onClick={copyLink}><Copy size={15} /> {t.copyLink}</button><button onClick={openSelectedFolder}><FolderOpen size={15} /> {t.openFolder}</button></div></> : <div className="rail-empty">{t.selectHint}</div>}</div></aside>
+        <aside className="right-rail">
+          <div className="rail-section detail-sidebar">
+            <div className="rail-title"><span>{t.selectedDownload}</span><button type="button" className="detail-close" aria-label={t.close} onClick={() => setSelectedId("")}><X size={17} /></button></div>
+            {selected ? <>
+              <div className="detail-selected-header"><div className={`detail-file-icon ${selected.accent}`}><CategoryIcon type={selected.type} /></div><h3 className="detail-name" title={selected.name}>{selected.name}</h3></div>
+              <span className="detail-field-label">URL</span>
+              <div className="detail-url-row"><span className="detail-url" dir="ltr" title={selected.url}>{selected.url}</span><button type="button" aria-label={t.copyLink} disabled={demoMode} title={demoMode ? t.demoReadOnly : undefined} onClick={copyLink}><Copy size={15} /></button></div>
+              <div className="detail-progress"><div className="detail-progress-head"><span>{t.progress}</span><strong>{selected.progress}%</strong></div><div className="progress-track"><span className={`progress-fill ${selected.accent}`} style={{ width: `${selected.progress}%` }} /></div></div>
+              <div className="detail-meta-list">
+                <div className="detail-meta-row"><span>{t.speed}</span><strong>{selected.speed}</strong></div>
+                <div className="detail-meta-row"><span>{t.eta}</span><strong>{selected.state === "completed" ? t.noTime : selected.eta}</strong></div>
+                <div className="detail-meta-row"><span>{t.size}</span><strong>{selected.size}</strong></div>
+                <div className="detail-meta-row"><span>{t.engine}</span><strong>{selected.engine}</strong></div>
+                <div className="detail-meta-row"><span>{t.status}</span><strong className={`detail-status-value ${selected.state}`}><i />{statusLabel(selected.state, language)}</strong></div>
+                <div className="detail-meta-row detail-save-row"><span>{t.saveTo}</span><strong dir="ltr" title={selected.location}>{selected.location}</strong></div>
+              </div>
+              <PlaylistProgressList items={selected.playlistItems} language={language} currentIndex={selected.playlistCurrentIndex} taskState={selected.state} onToggle={() => toggleState(selected.id)} />
+              <div className="detail-actions">
+                {selected.state === "downloading" ? <button type="button" className="detail-action-primary" disabled={demoMode} title={demoMode ? t.demoReadOnly : undefined} onClick={() => void toggleState(selected.id)}><Pause size={15} /> {t.pause}</button> : selected.state === "paused" ? <button type="button" className="detail-action-primary" disabled={demoMode} title={demoMode ? t.demoReadOnly : undefined} onClick={() => void toggleState(selected.id)}><Play size={15} /> {t.resumeDownload}</button> : null}
+                <button type="button" disabled={demoMode} title={demoMode ? t.demoReadOnly : undefined} onClick={copyLink}><Copy size={15} /> {t.copyLink}</button>
+                <button type="button" disabled={demoMode} title={demoMode ? t.demoReadOnly : undefined} onClick={openSelectedFolder}><FolderOpen size={15} /> {t.openFolder}</button>
+              </div>
+            </> : <div className="rail-empty">{t.selectHint}</div>}
+          </div>
+        </aside>
       </div>
 
       {modal === "add" ? <AddDownloadModal language={language} defaultPath={defaultDownloadDir} initialUrl={prefillUrl} tauriMode={tauriMode} engineAvailable={engineAvailable} onClose={() => { setModal(null); setPrefillUrl(""); }} onAdd={addDownload} /> : null}
@@ -1044,7 +1233,87 @@ function QueueToolbar({ language, search, setSearch, filter, setFilter, sort, se
   return <div className="queue-toolbar"><div className="search-field"><Search size={15} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={t.search} /></div><div className="filter-tabs">{([["all", t.all], ["downloading", t.active], ["paused", t.paused], ["completed", t.done], ["error", t.failed], ["cancelled", t.cancelledFilter]] as const).map(([value, label]) => <button key={value} className={filter === value ? "active" : ""} onClick={() => setFilter(value)}>{label}</button>)}</div><label className="sort-field"><span>{t.sort}</span><select value={sort} onChange={(event) => setSort(event.target.value)}><option value="newest">{t.newest}</option><option value="name">{t.name}</option><option value="size">{t.size}</option></select><ChevronDown size={13} /></label></div>;
 }
 
-type DownloadRowProps = { item: DownloadItem; language: Language; selected: boolean; onSelect: () => void; onToggle: () => void; onCancel: () => void; onRemove: () => void };
+type DownloadsViewProps = {
+  language: Language;
+  demoMode: boolean;
+  downloads: DownloadItem[];
+  visibleDownloads: DownloadItem[];
+  selectedId: string;
+  filter: "all" | DownloadState;
+  setFilter: (value: "all" | DownloadState) => void;
+  search: string;
+  setSearch: (value: string) => void;
+  sort: string;
+  setSort: (value: string) => void;
+  activeCount: number;
+  completedCount: number;
+  pausedCount: number;
+  failedCount: number;
+  totalSpeed: number;
+  onNewDownload: () => void;
+  onSelect: (id: string) => void;
+  onToggle: (id: string) => void;
+  onCancel: (id: string) => void;
+  onRemove: (id: string) => void;
+};
+
+function DownloadsView(props: DownloadsViewProps) {
+  const { language, demoMode, downloads, visibleDownloads, filter, setFilter, search, setSearch, sort, setSort, activeCount, completedCount, pausedCount, failedCount, totalSpeed, onNewDownload, onSelect, onToggle, onCancel, onRemove } = props;
+  const t = copy[language];
+  useEffect(() => {
+    const focusDownloadsSearch = (event: KeyboardEvent) => {
+      if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== "f") return;
+      const input = document.querySelector<HTMLInputElement>(".download-heading-search input");
+      if (!input) return;
+      event.preventDefault();
+      input.focus();
+      input.select();
+    };
+    window.addEventListener("keydown", focusDownloadsSearch);
+    return () => window.removeEventListener("keydown", focusDownloadsSearch);
+  }, []);
+  const metrics = [
+    { label: t.totalDownloads, value: String(downloads.length), accent: "blue" },
+    { label: t.active, value: String(activeCount), accent: "cyan" },
+    { label: t.completed, value: String(completedCount), accent: "green" },
+    { label: t.paused, value: String(pausedCount), accent: "amber" },
+    { label: t.failed, value: String(failedCount), accent: "red" },
+    { label: t.totalSpeed, value: formatSpeed(totalSpeed), accent: "slate" },
+  ];
+  const filters = [["all", t.all], ["downloading", t.active], ["paused", t.paused], ["completed", t.done], ["error", t.failed]] as const;
+  return <section className="downloads-view" dir={language === "ar" ? "rtl" : "ltr"}>
+    <div className="content-heading downloads-heading">
+      <div><h1>{t.downloads}</h1><p>{t.downloadsSub}</p>{props.demoMode ? <span className="demo-only-badge">{t.demoPreview}</span> : null}</div>
+      <div className="heading-actions downloads-heading-actions">
+        <label className="search-field download-heading-search"><Search size={16} /><input id="downloads-search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder={t.search} aria-label={t.search} /><kbd>Ctrl+F</kbd></label>
+        <AppButton icon={<Plus size={17} />} onClick={onNewDownload}>{t.newDownload}</AppButton>
+      </div>
+    </div>
+    <div className="download-summary">{metrics.map((metric) => <div className={`download-summary-card ${metric.accent}`} key={metric.label}><span>{metric.label}</span><strong>{metric.value}</strong></div>)}</div>
+    <section className="panel downloads-panel" aria-label={t.queue}>
+      <div className="downloads-toolbar">
+        <div className="downloads-filter-tabs" role="tablist" aria-label={t.status}>{filters.map(([value, label]) => <button type="button" role="tab" aria-selected={filter === value} key={value} className={filter === value ? "active" : ""} onClick={() => setFilter(value)}>{label}<span>{value === "all" ? downloads.length : downloads.filter((item) => item.state === value).length}</span></button>)}</div>
+        <label className="sort-field"><span>{t.sort}</span><select value={sort} onChange={(event) => setSort(event.target.value)}><option value="newest">{t.newest}</option><option value="name">{t.name}</option><option value="size">{t.size}</option></select><ChevronDown size={13} /></label>
+      </div>
+      <div className="downloads-table-wrap"><div className="downloads-table-head" aria-hidden="true"><span>{t.name}</span><span>{t.progress}</span><span>{t.speed}</span><span>{t.eta}</span><span>{t.size}</span><span>{t.engine}</span><span>{t.status}</span><span>{t.actions}</span></div>
+        {visibleDownloads.length ? <div className="downloads-table-body">{visibleDownloads.map((item) => <DownloadsTableRow key={item.id} item={item} language={language} selected={props.selectedId === item.id} onSelect={() => onSelect(item.id)} onToggle={() => onToggle(item.id)} onCancel={() => onCancel(item.id)} onRemove={() => onRemove(item.id)} demoMode={demoMode} />)}</div> : <EmptyState language={language} />}
+      </div>
+    </section>
+  </section>;
+}
+
+function DownloadsTableRow({ item, language, selected, onSelect, onToggle, onCancel, onRemove, demoMode = false }: DownloadRowProps) {
+  const t = copy[language];
+  const unknownSize = item.state === "downloading" && item.sizeBytes <= 0;
+  return <article className={`downloads-table-row${selected ? " selected" : ""}`} role="group" aria-label={item.name} tabIndex={0} onClick={onSelect} onKeyDown={(event) => { if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); onSelect(); } }}>
+    <div className="downloads-name-cell"><span className={`file-icon ${item.accent}`}><CategoryIcon type={item.type} /></span><span className="downloads-file-name" title={item.name}>{item.name}</span></div>
+    <div className="downloads-progress-cell"><div><strong>{unknownSize ? item.downloaded : `${item.progress}%`}</strong><span className={`row-progress${unknownSize ? " is-indeterminate" : ""}`}><i className={`progress-fill ${item.accent}`} style={{ width: unknownSize ? "34%" : `${item.progress}%` }} /></span></div></div>
+    <span className="downloads-speed-cell">{item.speed}</span><span className="downloads-eta-cell">{item.state === "completed" ? t.noTime : item.eta}</span><span className="downloads-size-cell">{item.size}</span><span className="downloads-engine-cell">{item.engine}</span><span className={`downloads-status-cell ${item.state}`}><i />{statusLabel(item.state, language)}</span>
+    <div className="downloads-row-actions">{item.state === "downloading" || item.state === "paused" ? <><button type="button" aria-label={item.state === "downloading" ? t.pause : t.resume} disabled={demoMode} title={demoMode ? t.demoReadOnly : undefined} onClick={(event) => { event.stopPropagation(); onToggle(); }}>{item.state === "downloading" ? <Pause size={14} /> : <Play size={14} />}</button><button type="button" aria-label={t.cancelDownload} disabled={demoMode} title={demoMode ? t.demoReadOnly : undefined} onClick={(event) => { event.stopPropagation(); onCancel(); }}><X size={14} /></button></> : null}<button type="button" aria-label={t.remove} disabled={demoMode} title={demoMode ? t.demoReadOnly : undefined} onClick={(event) => { event.stopPropagation(); onRemove(); }}><Trash2 size={14} /></button></div>
+  </article>;
+}
+
+type DownloadRowProps = { item: DownloadItem; language: Language; selected: boolean; onSelect: () => void; onToggle: () => void; onCancel: () => void; onRemove: () => void; demoMode?: boolean };
 
 function LazyDownloadRow(props: DownloadRowProps) {
   const [isVisible, setIsVisible] = useState(false);
@@ -1082,7 +1351,6 @@ const areDownloadRowPropsEqual = (previous: DownloadRowProps, next: DownloadRowP
 const MemoDownloadRow = memo(DownloadRow, areDownloadRowPropsEqual);
 const MemoLazyDownloadRow = memo(LazyDownloadRow, areDownloadRowPropsEqual);
 
-function DetailMetric({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) { return <div className="detail-metric"><span>{icon} {label}</span><strong>{value}</strong></div>; }
 
 function PlaylistProgressList({ items, language, currentIndex, taskState, onToggle }: { items: PlaylistItemProgress[]; language: Language; currentIndex?: number; taskState: DownloadState; onToggle: () => void }) {
   const t = copy[language];
@@ -1180,10 +1448,42 @@ function BrowserView({ language }: { language: Language }) {
   </div>;
 }
 function Globe2Icon() { return <span className="browser-globe"><Wifi size={12} /></span>; }
-function UtilitiesView({ language, pasteClipboardLink, openDownloadsFolder, checkEngines, engineStatus, sfxEnabled, setSfxEnabled, clipboardSnifferEnabled, setClipboardSnifferEnabled }: { language: Language; pasteClipboardLink: () => void; openDownloadsFolder: () => void; checkEngines: () => void; engineStatus: string; sfxEnabled: boolean; setSfxEnabled: (value: boolean) => void; clipboardSnifferEnabled: boolean; setClipboardSnifferEnabled: (value: boolean) => void }) {
+function UtilitiesView({ language, settingsOnly = false, pasteClipboardLink, openDownloadsFolder, checkEngines, engineStatus, sfxEnabled, setSfxEnabled, clipboardSnifferEnabled, setClipboardSnifferEnabled }: { language: Language; settingsOnly?: boolean; pasteClipboardLink: () => void; openDownloadsFolder: () => void; checkEngines: () => void; engineStatus: string; sfxEnabled: boolean; setSfxEnabled: (value: boolean) => void; clipboardSnifferEnabled: boolean; setClipboardSnifferEnabled: (value: boolean) => void }) {
   const t = copy[language];
   const ar = language === "ar";
-  return <div className="subpage"><div className="content-heading"><div><div className="eyebrow"><span className="eyebrow-line" /> {t.toolkitKicker}</div><h1>{t.utilitiesTitle}</h1><p>{t.utilitiesSub}</p></div></div><div className="utility-actions"><button className="utility-action" onClick={pasteClipboardLink}><Link2 size={18} /><span>{t.pasteClipboard}</span></button><button className="utility-action" onClick={openDownloadsFolder}><FolderOpen size={18} /><span>{t.openDownloadsFolder}</span></button><button className="utility-action" onClick={checkEngines}><Activity size={18} /><span>{t.checkEngines}</span></button></div>{engineStatus ? <p className="engine-status" role="status">{engineStatus}</p> : null}<section className="utility-settings"><h2>{ar ? "تفاعلات التطبيق" : "App interactions"}</h2><label className="utility-setting"><span><strong>{ar ? "الأصوات التفاعلية" : "Interface sounds"}</strong><small>{ar ? "نغمات خفيفة عند الإضافة والنسخ والاكتمال" : "Subtle tones on add, copy, and completion"}</small></span><input type="checkbox" checked={sfxEnabled} onChange={(event) => setSfxEnabled(event.target.checked)} /></label><label className="utility-setting"><span><strong>{ar ? "رصد روابط الحافظة" : "Clipboard link detection"}</strong><small>{ar ? "يفحص نص الحافظة محليًا كل 1.6 ثانية؛ متوقف افتراضيًا" : "Checks clipboard text locally every 1.6 seconds; off by default"}</small></span><input type="checkbox" checked={clipboardSnifferEnabled} onChange={(event) => setClipboardSnifferEnabled(event.target.checked)} /></label></section></div>;
+  return (
+    <div className="subpage">
+      <div className="content-heading">
+        <div>
+          <div className="eyebrow"><span className="eyebrow-line" /> {settingsOnly ? t.preferences : t.toolkitKicker}</div>
+          <h1>{settingsOnly ? t.preferences : t.utilitiesTitle}</h1>
+          <p>{settingsOnly ? t.settingsSub : t.utilitiesSub}</p>
+        </div>
+      </div>
+      {settingsOnly ? (
+        <section className="utility-settings">
+          <h2>{ar ? "تفاعلات التطبيق" : "App interactions"}</h2>
+          <label className="utility-setting">
+            <span><strong>{ar ? "الأصوات التفاعلية" : "Interface sounds"}</strong><small>{ar ? "نغمات خفيفة عند الإضافة والنسخ والاكتمال" : "Subtle tones on add, copy, and completion"}</small></span>
+            <input type="checkbox" checked={sfxEnabled} onChange={(event) => setSfxEnabled(event.target.checked)} />
+          </label>
+          <label className="utility-setting">
+            <span><strong>{ar ? "رصد روابط الحافظة" : "Clipboard link detection"}</strong><small>{ar ? "يفحص نص الحافظة محليًا كل 1.6 ثانية؛ متوقف افتراضيًا" : "Checks clipboard text locally every 1.6 seconds; off by default"}</small></span>
+            <input type="checkbox" checked={clipboardSnifferEnabled} onChange={(event) => setClipboardSnifferEnabled(event.target.checked)} />
+          </label>
+        </section>
+      ) : (
+        <>
+          <div className="utility-actions">
+            <button className="utility-action" onClick={pasteClipboardLink}><Link2 size={18} /><span>{t.pasteClipboard}</span></button>
+            <button className="utility-action" onClick={openDownloadsFolder}><FolderOpen size={18} /><span>{t.openDownloadsFolder}</span></button>
+            <button className="utility-action" onClick={checkEngines}><Activity size={18} /><span>{t.checkEngines}</span></button>
+          </div>
+          {engineStatus ? <p className="engine-status" role="status">{engineStatus}</p> : null}
+        </>
+      )}
+    </div>
+  );
 }
 function LibraryView({ language, downloads, onOpen }: { language: Language; downloads: DownloadItem[]; onOpen: (item: DownloadItem) => void }) {
   const t = copy[language];
