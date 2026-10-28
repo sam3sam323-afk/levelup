@@ -1214,7 +1214,7 @@ export default function Home() {
 
       {modal === "add" ? <AddDownloadModal language={language} defaultPath={defaultDownloadDir} initialUrl={prefillUrl} tauriMode={tauriMode} engineAvailable={engineAvailable} onClose={() => { setModal(null); setPrefillUrl(""); }} onAdd={addDownload} /> : null}
       {toast ? <div className={`toast ${toast.startsWith(t.downloadError) ? "toast--error" : ""}`}>{toast.startsWith(t.downloadError) ? <AlertCircle size={16} /> : <CheckCircle2 size={16} />} {toast}</div> : null}
-      {clipboardCandidate ? <div className="clipboard-toast" role="status"><div><strong>{language === "ar" ? "رابط جديد في الحافظة" : "Link detected in clipboard"}</strong><span dir="ltr">{clipboardCandidate.length > 100 ? `${clipboardCandidate.slice(0, 100)}…` : clipboardCandidate}</span></div><button type="button" onClick={() => { const link = clipboardCandidate; setClipboardCandidate(""); void addDownload(link, defaultDownloadDir); if (sfxEnabled) playUiSfx("action"); }}>{language === "ar" ? "تنزيل" : "Download"}</button><button type="button" className="clipboard-dismiss" aria-label={language === "ar" ? "إغلاق" : "Dismiss"} onClick={() => setClipboardCandidate("")}>×</button></div> : null}
+      {clipboardCandidate ? <div className="clipboard-toast" role="status"><div><strong>{language === "ar" ? "رابط جديد في الحافظة" : "Link detected in clipboard"}</strong><span dir="ltr">{clipboardCandidate.length > 100 ? `${clipboardCandidate.slice(0, 100)}…` : clipboardCandidate}</span></div><button type="button" onClick={() => { const link = clipboardCandidate; setClipboardCandidate(""); if (defaultDownloadDir) void addDownload(link, defaultDownloadDir); else openAddModal(link); if (sfxEnabled) playUiSfx("action"); }}>{language === "ar" ? "تنزيل" : "Download"}</button><button type="button" className="clipboard-dismiss" aria-label={language === "ar" ? "إغلاق" : "Dismiss"} onClick={() => setClipboardCandidate("")}>×</button></div> : null}
       {celebrationId ? <div className="download-celebration" key={celebrationId} aria-hidden="true">{Array.from({ length: 22 }, (_, index) => <i key={index} style={{ "--x": `${(index % 11 - 5) * 22}px`, "--y": `${-95 - (index % 5) * 35}px`, "--hue": `${(index * 37) % 360}` } as React.CSSProperties} />)}</div> : null}
     </div>
   );
@@ -1262,6 +1262,17 @@ type DownloadsViewProps = {
   onRemove: (id: string) => void;
 };
 
+function AnimatedMetricValue({ value }: { value: string }) {
+  const previousValue = useRef(value);
+  const [pulseVersion, setPulseVersion] = useState(0);
+  useEffect(() => {
+    if (previousValue.current === value) return;
+    previousValue.current = value;
+    setPulseVersion((current) => current + 1);
+  }, [value]);
+  return <strong>{pulseVersion ? <span key={pulseVersion} className="download-summary-value">{value}</span> : value}</strong>;
+}
+
 function DownloadsView(props: DownloadsViewProps) {
   const { language, demoMode, downloads, visibleDownloads, filter, setFilter, search, setSearch, sort, setSort, activeCount, completedCount, pausedCount, failedCount, totalSpeed, onNewDownload, onSelect, onToggle, onCancel, onRemove } = props;
   const t = copy[language];
@@ -1294,7 +1305,7 @@ function DownloadsView(props: DownloadsViewProps) {
         <AppButton icon={<Plus size={17} />} onClick={onNewDownload}>{t.newDownload}</AppButton>
       </div>
     </div>
-    <div className="download-summary">{metrics.map((metric) => <div className={`download-summary-card ${metric.accent}`} key={metric.label}><span>{metric.label}</span><strong>{metric.value}</strong></div>)}</div>
+    <div className="download-summary">{metrics.map((metric) => <div className={`download-summary-card ${metric.accent}`} key={metric.label}><span>{metric.label}</span><AnimatedMetricValue value={metric.value} /></div>)}</div>
     <section className="panel downloads-panel" aria-label={t.queue}>
       <div className="downloads-toolbar">
         <div className="downloads-filter-tabs" role="tablist" aria-label={t.status}>{filters.map(([value, label]) => <button type="button" role="tab" aria-selected={filter === value} key={value} className={filter === value ? "active" : ""} onClick={() => setFilter(value)}>{label}<span>{value === "all" ? downloads.length : downloads.filter((item) => item.state === value).length}</span></button>)}</div>

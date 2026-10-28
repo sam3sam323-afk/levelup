@@ -942,3 +942,45 @@ button:active, .app-button:active, .pair-button:active, .detail-actions button:a
 
 /* Keep mixed Latin filenames and measurements readable in RTL layouts. */
 .download-summary-card strong, .downloads-progress-cell > div > strong, .downloads-speed-cell, .downloads-eta-cell, .downloads-size-cell, .detail-meta-row strong:not(.detail-status-value) { direction: ltr; unicode-bidi: isolate; }
+
+
+/* Readability pass: raise text contrast and legibility without enlarging the reference layout. */
+:root { --muted: #bbc8d1; --muted-2: #98a8b4; }
+body { font-family: Inter, "Segoe UI Variable", "Noto Sans Arabic", Tahoma, system-ui, -apple-system, sans-serif; }
+.window-brand-copy small { color: #a6b5bf; font-size: 10px; }
+.engine-indicator { color: #bdcbd4; font-size: 13px; }
+.header-segment button { font-size: 12px; }
+.nav-item { color: #c0cdd6; font-size: 15px; }
+.nav-item:hover { color: #f1f7fa; }
+.downloads-heading p { color: #adbbc5; font-size: 14px; }
+.download-heading-search input { color: #e0e8ed; font-size: 14px; }
+.download-heading-search input::placeholder { color: #a2b1bb; }
+.download-heading-search kbd { color: #b3c1ca; font-size: 11px; }
+.download-summary-card > span { color: #b6c4ce; font-size: 13px; }
+.download-summary-card > strong { font-size: 22px; }
+.download-summary-card.slate > strong { font-size: 18px; }
+.download-summary-value { display: inline-block; transform-origin: center; animation: summaryValuePulse .42s cubic-bezier(.2,.8,.25,1) both; }
+@keyframes summaryValuePulse { 0% { opacity: .72; transform: translateY(2px) scale(.96); text-shadow: 0 0 0 transparent; } 55% { opacity: 1; transform: translateY(-1px) scale(1.045); text-shadow: 0 0 14px currentColor; } 100% { transform: translateY(0) scale(1); text-shadow: 0 0 0 transparent; } }
+.downloads-filter-tabs button, .sort-field, .sort-field select { font-size: 13px; }
+.downloads-table-head { color: #b4c1ca; font-size: 13px; }
+.downloads-table-row { min-height: 62px; }
+.downloads-file-name { color: #e0e8ed; font-size: 14px; }
+.downloads-progress-cell strong, .downloads-speed-cell, .downloads-eta-cell, .downloads-size-cell, .downloads-engine-cell, .downloads-status-cell { color: #c0ccd4; font-size: 13px; }
+.detail-name { color: #e5edf2; font-size: 16px; }
+.detail-field-label, .detail-meta-row { color: #b8c5ce; font-size: 14px; }
+.detail-url-row .detail-url { color: #c1cdd5; font-size: 13px; }
+.detail-meta-row strong { color: #d4dfe5; font-size: 14px; }
+.detail-actions button { font-size: 13px; }
+.downloads-heading-actions .app-button, .add-card .modal-actions .app-button { font-size: 13px; }
+.add-card .field-label { font-size: 13px; }
+.add-card .route-preview, .add-card .route-preview strong { color: #c1ced7; font-size: 12px; }
+.add-card .playlist-option strong { font-size: 12px; }
+.save-path-hint { color: #a7b6c0; font-size: 11px; }
+.clipboard-toast strong { font-size: 14px; }
+.clipboard-toast span { color: #b7c6d0; font-size: 12px; }
+.clipboard-toast button { font-size: 12px; }
+.demo-only-badge { font-size: 12px; }
+.nexus-app.light .downloads-heading p, .nexus-app.light .download-summary-card > span { color: #566d7b; }
+.nexus-app.light .downloads-file-name, .nexus-app.light .detail-name { color: #263b49; }
+.nexus-app.light .downloads-progress-cell strong, .nexus-app.light .downloads-speed-cell, .nexus-app.light .downloads-eta-cell, .nexus-app.light .downloads-size-cell, .nexus-app.light .downloads-engine-cell, .nexus-app.light .detail-meta-row { color: #435c6b; }
+@media (prefers-reduced-motion: reduce) { .download-summary-value { animation: none !important; } }
