@@ -6,7 +6,7 @@ use crate::process_manager::ProcessManager;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -655,6 +655,7 @@ fn sidecar_args_with_ffmpeg_dir(task: &DownloadTask, ffmpeg_dir: Option<&std::pa
                 .ok_or_else(|| CommandError::manager("FFmpeg resource directory is unavailable"))?
                 .to_string_lossy()
                 .to_string();
+            // yt-dlp --print implies quiet and can imply simulation; keep progress and real downloads explicit.
             let mut args = vec![
                 "--newline".into(),
                 "--progress".into(),
@@ -662,6 +663,9 @@ fn sidecar_args_with_ffmpeg_dir(task: &DownloadTask, ffmpeg_dir: Option<&std::pa
                 "0.5".into(),
                 "--progress-template".into(),
                 "download:%(progress.status)s|%(progress.downloaded_bytes)s|%(progress.total_bytes)s|%(progress.total_bytes_estimate)s|%(progress.speed)s|%(progress.eta)s|%(playlist_index)s|%(playlist_count)s|%(progress.filename)s".into(),
+                "--print".into(),
+                "after_move:NEXUS_OUTPUT_PATH:%(filepath)s".into(),
+                "--no-simulate".into(),
                 "--continue".into(),
                 "--ffmpeg-location".into(),
                 ffmpeg_dir,
@@ -759,6 +763,7 @@ fn spawn_task(
     let app_handle = app.clone();
     let task_id = task.task_id.clone();
     let task_engine = task.engine.clone();
+    let task_download_dir = task.download_dir.clone();
     let downloads_for_task = downloads.clone();
     let processes_for_task = processes.clone();
     tauri::async_runtime::spawn(async move {
@@ -766,17 +771,26 @@ fn spawn_task(
         let mut stdout_buffer = Vec::new();
         let mut stderr_buffer = Vec::new();
         let mut stderr_tail = Vec::new();
+        let mut final_output_path: Option<PathBuf> = None;
         let mut exit_code: Option<i32> = None;
         while let Some(event) = receiver.recv().await {
             match event {
                 CommandEvent::Stdout(bytes) => {
                     for line in append_output_lines(&mut stdout_buffer, &bytes) {
+                        if let Some(path) = line.strip_prefix("NEXUS_OUTPUT_PATH:") {
+                            final_output_path = Some(PathBuf::from(path.trim()));
+                            continue;
+                        }
                         if parse_progress(&task_engine, &line).is_none() { remember_engine_error(&mut stderr_tail, &line); }
                         handle_download_output_line(&app_handle, &downloads_for_task, &task_id, &task_engine, "stdout", &line, &mut last_progress_emit);
                     }
                 }
                 CommandEvent::Stderr(bytes) => {
                     for line in append_output_lines(&mut stderr_buffer, &bytes) {
+                        if let Some(path) = line.strip_prefix("NEXUS_OUTPUT_PATH:") {
+                            final_output_path = Some(PathBuf::from(path.trim()));
+                            continue;
+                        }
                         remember_engine_error(&mut stderr_tail, &line);
                         handle_download_output_line(&app_handle, &downloads_for_task, &task_id, &task_engine, "stderr", &line, &mut last_progress_emit);
                     }
@@ -805,6 +819,10 @@ fn spawn_task(
         for (buffer, stream) in [(&mut stdout_buffer, "stdout"), (&mut stderr_buffer, "stderr")] {
             if !buffer.is_empty() {
                 let line = String::from_utf8_lossy(buffer).trim().to_string();
+                if let Some(path) = line.strip_prefix("NEXUS_OUTPUT_PATH:") {
+                    final_output_path = Some(PathBuf::from(path.trim()));
+                    continue;
+                }
                 if stream == "stderr" { remember_engine_error(&mut stderr_tail, &line); }
                 else if parse_progress(&task_engine, &line).is_none() { remember_engine_error(&mut stderr_tail, &line); }
                 handle_download_output_line(&app_handle, &downloads_for_task, &task_id, &task_engine, stream, &line, &mut last_progress_emit);
@@ -812,6 +830,46 @@ fn spawn_task(
         }
         let _ = processes_for_task.remove(&task_id);
         if let Ok(current) = downloads_for_task.get(&task_id) {
+            if current.state == DownloadState::Downloading
+                && exit_code == Some(0)
+                && matches!(&task_engine, EngineType::YtDlp)
+            {
+                match inspect_ytdlp_output_file(&task_download_dir, final_output_path.as_deref()) {
+                    Ok((filename, size)) => {
+                        match downloads_for_task.update_progress(
+                            &task_id, 100.0, size, Some(size), 0, None, Some(filename), None, None, DownloadState::Downloading,
+                        ) {
+                            Ok(updated) => {
+                                let payload = DownloadProgressEvent {
+                                    task_id: updated.task_id,
+                                    state: updated.state,
+                                    progress: updated.progress,
+                                    downloaded_bytes: updated.downloaded_bytes,
+                                    total_bytes: updated.total_bytes,
+                                    speed_bytes_per_second: updated.speed_bytes_per_second,
+                                    eta_seconds: updated.eta_seconds,
+                                    filename: updated.filename,
+                                    engine: updated.engine,
+                                    error: updated.last_error,
+                                    playlist_items: updated.playlist_items,
+                                    playlist_current_index: updated.playlist_current_index,
+                                    playlist_total: updated.playlist_total,
+                                };
+                                let _ = app_handle.emit(events::DOWNLOAD_PROGRESS, payload);
+                                let _ = persist_tasks(&app_handle, &downloads_for_task);
+                            }
+                            Err(error) => {
+                                fail_download_with_reason(&app_handle, &downloads_for_task, &task_id, current.options.playlist.unwrap_or(false), format!("downloaded file exists, but its details could not be saved: {error}"));
+                                return;
+                            }
+                        }
+                    }
+                    Err(reason) => {
+                        fail_download_with_reason(&app_handle, &downloads_for_task, &task_id, current.options.playlist.unwrap_or(false), reason);
+                        return;
+                    }
+                }
+            }
             if current.state == DownloadState::Downloading && exit_code != Some(0) {
                 let reason = engine_failure_reason(&task_engine, exit_code, &stderr_tail);
                 if current.options.playlist.unwrap_or(false) {
@@ -903,17 +961,79 @@ fn parse_progress(engine: &EngineType, line: &str) -> Option<(f64, u64, Option<u
 }
 
 fn parse_yt_dlp_progress(line: &str) -> Option<(f64, u64, Option<u64>, u64, Option<u64>, Option<String>, Option<usize>, Option<usize>, DownloadState)> {
-    let payload = line.strip_prefix("download:")?;
-    let fields: Vec<&str> = payload.split('|').collect();
-    if fields.len() < 9 { return None; }
-    let downloaded = parse_optional_u64(fields[1]).unwrap_or(0);
-    let total = parse_optional_u64(fields[2]).or_else(|| parse_optional_u64(fields[3]));
-    let progress = total.map(|value| if value == 0 { 0.0 } else { downloaded as f64 * 100.0 / value as f64 }).unwrap_or(0.0);
-    let item_progress = if fields[0] == "finished" { 100.0 } else { progress };
-    let playlist_index = fields[6].parse::<usize>().ok();
-    let playlist_total = fields[7].parse::<usize>().ok();
-    let filename = Some(fields[8..].join("|")).filter(|value| !value.is_empty() && *value != "NA");
-    Some((item_progress, downloaded, total, parse_rate(fields[4]), parse_eta(fields[5]), filename, playlist_index, playlist_total, if fields[0] == "finished" { DownloadState::Completed } else { DownloadState::Downloading }))
+    if let Some(payload) = line.strip_prefix("download:") {
+        let fields: Vec<&str> = payload.split('|').collect();
+        if fields.len() < 9 { return None; }
+        let downloaded = parse_optional_u64(fields[1]).unwrap_or(0);
+        let total = parse_optional_u64(fields[2]).or_else(|| parse_optional_u64(fields[3])).filter(|bytes| *bytes > 0);
+        let progress = total.map(|value| if value == 0 { 0.0 } else { downloaded as f64 * 100.0 / value as f64 }).unwrap_or(0.0);
+        let item_progress = if fields[0] == "finished" { 100.0 } else { progress };
+        let playlist_index = fields[6].parse::<usize>().ok();
+        let playlist_total = fields[7].parse::<usize>().ok();
+        let filename = Some(fields[8..].join("|")).filter(|value| !value.is_empty() && *value != "NA");
+        let eta = parse_eta(fields[5]).filter(|seconds| *seconds > 0);
+        return Some((item_progress, downloaded, total, parse_rate(fields[4]), eta, filename, playlist_index, playlist_total, if fields[0] == "finished" { DownloadState::Completed } else { DownloadState::Downloading }));
+    }
+    parse_yt_dlp_text_progress(line)
+}
+
+fn parse_yt_dlp_text_progress(line: &str) -> Option<(f64, u64, Option<u64>, u64, Option<u64>, Option<String>, Option<usize>, Option<usize>, DownloadState)> {
+    let line = line.strip_prefix("[download]")?.trim();
+    let percent_end = line.find('%')?;
+    let progress = line[..percent_end].trim().parse::<f64>().ok()?.clamp(0.0, 100.0);
+    let remaining = &line[percent_end + 1..];
+    let total = remaining.split_once("of ").and_then(|(_, value)| {
+        let value = value.trim().trim_start_matches('~').trim();
+        parse_human_bytes(value.split_whitespace().next()?)
+    }).filter(|bytes| *bytes > 0);
+    let downloaded = total.map(|bytes| (bytes as f64 * progress / 100.0) as u64).unwrap_or(0);
+    let speed = remaining.split_once(" at ").and_then(|(_, value)| value.split_whitespace().next()).map(parse_rate).unwrap_or(0);
+    let eta = remaining.split_once(" ETA ").and_then(|(_, value)| value.split_whitespace().next()).and_then(parse_eta).filter(|seconds| *seconds > 0);
+    Some((progress, downloaded, total, speed, eta, None, None, None, DownloadState::Downloading))
+}
+
+fn path_is_within(root: &Path, path: &Path) -> bool {
+    #[cfg(windows)]
+    {
+        let root = root.to_string_lossy().replace('/', "\\");
+        let path = path.to_string_lossy().replace('/', "\\");
+        let root = root.trim_end_matches('\\').to_lowercase();
+        path.to_lowercase().starts_with(&format!("{root}\\"))
+    }
+    #[cfg(not(windows))]
+    {
+        path.starts_with(root)
+    }
+}
+
+fn inspect_ytdlp_output_file(download_dir: &Path, reported_path: Option<&Path>) -> Result<(String, u64), String> {
+    let reported_path = reported_path.ok_or_else(|| "yt-dlp exited successfully but did not report the saved file path".to_string())?;
+    let download_root = download_dir.canonicalize().map_err(|error| format!("cannot access the download folder: {error}"))?;
+    let candidate = if reported_path.is_absolute() { reported_path.to_path_buf() } else { download_root.join(reported_path) };
+    let output_file = candidate.canonicalize().map_err(|error| format!("yt-dlp reported success but the output file is missing: {error}"))?;
+    if !path_is_within(&download_root, &output_file) {
+        return Err("yt-dlp output path is outside the configured download folder".into());
+    }
+    let metadata = std::fs::metadata(&output_file).map_err(|error| format!("cannot read the downloaded file details: {error}"))?;
+    if !metadata.is_file() { return Err("yt-dlp output is not a regular file".into()); }
+    let size = metadata.len();
+    if size == 0 { return Err("yt-dlp finished but the output file is empty".into()); }
+    let filename = output_file.file_name().map(|name| name.to_string_lossy().into_owned()).filter(|name| !name.is_empty()).ok_or_else(|| "cannot determine the downloaded file name".to_string())?;
+    Ok((filename, size))
+}
+
+
+fn fail_download_with_reason(app: &AppHandle, downloads: &DownloadManager, task_id: &str, is_playlist: bool, reason: String) {
+    let playlist_item = if is_playlist {
+        downloads.mark_playlist_item_failed(task_id, reason.clone()).ok().and_then(|task| task.playlist_current_index)
+    } else {
+        None
+    };
+    let _ = downloads.transition(task_id, DownloadState::Failed);
+    if !is_playlist { let _ = downloads.set_last_error(task_id, reason.clone()); }
+    let _ = persist_tasks(app, downloads);
+    update_taskbar_progress(app, downloads);
+    let _ = app.emit(events::DOWNLOAD_FAILED, serde_json::json!({ "taskId": task_id, "error": reason, "playlistItem": playlist_item }));
 }
 
 fn parse_aria2c_progress(line: &str) -> Option<(f64, u64, Option<u64>, u64, Option<u64>, Option<String>, Option<usize>, Option<usize>, DownloadState)> {
@@ -1284,6 +1404,39 @@ mod tests {
     }
 
     #[test]
+    fn treats_zero_ytdlp_transfer_metrics_as_unknown_during_an_active_transfer() {
+        let parsed = parse_yt_dlp_progress("download:downloading|0|0|0|0|0|NA|NA|video.mp4").unwrap();
+        assert_eq!(parsed.1, 0);
+        assert_eq!(parsed.2, None);
+        assert_eq!(parsed.4, None);
+    }
+
+    #[test]
+    fn parses_standard_yt_dlp_console_progress_when_template_output_is_unavailable() {
+        let parsed = super::parse_yt_dlp_text_progress("[download]  42.5% of ~ 10.00MiB at 1.25MiB/s ETA 00:00:04").unwrap();
+        assert_eq!(parsed.0, 42.5);
+        assert_eq!(parsed.2, Some(10 * 1024 * 1024));
+        assert_eq!(parsed.3, 1_310_720);
+        assert_eq!(parsed.4, Some(4));
+        assert_eq!(parsed.8, super::DownloadState::Downloading);
+    }
+
+    #[test]
+    fn accepts_successful_ytdlp_output_only_when_a_nonempty_file_is_inside_the_download_folder() {
+        let root = std::env::temp_dir().join(format!("nexus-ytdlp-test-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&root).unwrap();
+        let output = root.join("video.mp4");
+        std::fs::write(&output, b"video-data").unwrap();
+        let details = super::inspect_ytdlp_output_file(&root, Some(&output)).unwrap();
+        assert_eq!(details, ("video.mp4".to_string(), 10));
+        assert!(super::inspect_ytdlp_output_file(&root, None).is_err());
+        std::fs::remove_file(&output).unwrap();
+        std::fs::write(&output, b"").unwrap();
+        assert!(super::inspect_ytdlp_output_file(&root, Some(&output)).unwrap_err().contains("empty"));
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
     fn parses_aria2_progress_delivered_with_a_cr_terminator() {
         let mut buffer = Vec::new();
         let lines = append_output_lines(&mut buffer, b"[#abc 1.2MiB/2.4MiB(50%) CN:4 DL:512KiB ETA:00m01s]\r");
@@ -1318,6 +1471,9 @@ mod tests {
         let args = sidecar_args_with_ffmpeg_dir(&task, Some(Path::new(r"C:\Nexus\binaries"))).unwrap();
         let path_index = args.iter().position(|argument| argument.as_str() == "-P").unwrap();
         assert_eq!(args[path_index + 1], expected);
+        assert!(args.iter().any(|argument| argument.as_str() == "--progress"));
+        assert!(args.iter().any(|argument| argument.as_str() == "--no-simulate"));
+        assert!(args.iter().any(|argument| argument.as_str() == "after_move:NEXUS_OUTPUT_PATH:%(filepath)s"));
         assert_eq!(args.last().map(String::as_str), Some("https://www.youtube.com/watch?v=test"));
     }
 

@@ -632,12 +632,12 @@ function taskToItem(task: TauriDownloadTask): DownloadItem {
     type,
     engine: task.engine,
     progress: Math.round(task.progress),
-    size: formatBytes(task.totalBytes),
+    size: task.totalBytes == null ? "—" : formatBytes(task.totalBytes),
     sizeBytes: task.totalBytes ?? 0,
     downloaded: formatBytes(task.downloadedBytes),
     speed: formatSpeed(task.speedBytesPerSecond),
     speedBytesPerSecond: task.speedBytesPerSecond,
-    eta: formatEta(task.etaSeconds),
+    eta: task.state === "downloading" && task.etaSeconds === 0 ? "—" : formatEta(task.etaSeconds),
     state: task.state === "completed" ? "completed" : task.state === "paused" ? "paused" : task.state === "cancelled" ? "cancelled" : task.state === "failed" ? "error" : "downloading",
     accent: accentForCategory(type),
     createdAt: task.createdAt,
@@ -841,6 +841,7 @@ export default function Home() {
   useEffect(() => {
     let active = true;
     const pendingProgress = new Map<string, DownloadProgressEvent>();
+    const changedDuringHydration = new Set<string>();
     let progressFrame: number | null = null;
     const cleanups: Array<() => void> = [];
     void (async () => {
@@ -849,6 +850,7 @@ export default function Home() {
       setTauriMode(runtime);
       if (!runtime) return;
       const upsertTask = (task: TauriDownloadTask) => {
+        changedDuringHydration.add(task.taskId);
         setSelectedId((current) => current || task.taskId);
         setDownloads((items) => {
         const item = taskToItem(task);
@@ -870,11 +872,11 @@ export default function Home() {
               ...current,
               progress: Math.round(event.progress),
               downloaded: formatBytes(event.downloadedBytes),
-              size: formatBytes(event.totalBytes),
+              size: event.totalBytes == null ? current.size : formatBytes(event.totalBytes),
               sizeBytes: event.totalBytes ?? current.sizeBytes,
               speed: formatSpeed(event.speedBytesPerSecond),
               speedBytesPerSecond: event.speedBytesPerSecond,
-              eta: formatEta(event.etaSeconds),
+              eta: event.state === "downloading" && event.etaSeconds === 0 ? "—" : formatEta(event.etaSeconds),
               state: event.state === "paused" ? "paused" : event.state === "failed" ? "error" : event.state === "cancelled" ? "cancelled" : event.state === "completed" ? "completed" : "downloading",
               name: event.filename || current.name,
               playlistItems: event.playlistItems ?? current.playlistItems,
@@ -890,6 +892,7 @@ export default function Home() {
         });
       };
       const updateProgress = (event: DownloadProgressEvent) => {
+        changedDuringHydration.add(event.taskId);
         pendingProgress.set(event.taskId, event);
         if (progressFrame === null) progressFrame = window.requestAnimationFrame(flushProgress);
       };
@@ -937,7 +940,9 @@ export default function Home() {
       if (tasks?.length) {
         setDownloads((current) => {
           const merged = new Map(tasks.map((task) => [task.taskId, taskToItem(task)]));
-          current.forEach((item) => merged.set(item.id, item));
+          current.forEach((item) => {
+            if (changedDuringHydration.has(item.id) || !merged.has(item.id)) merged.set(item.id, item);
+          });
           return [...merged.values()];
         });
         setSelectedId((current) => current || tasks[0].taskId);
