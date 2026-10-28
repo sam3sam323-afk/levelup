@@ -835,7 +835,7 @@ fn spawn_task(
                 && exit_code == Some(0)
                 && matches!(&task_engine, EngineType::YtDlp)
             {
-                match inspect_ytdlp_output_file(&task_download_dir, final_output_path.as_deref()) {
+                match inspect_ytdlp_output_file_when_ready(&task_download_dir, final_output_path.as_deref()).await {
                     Ok((filename, size)) => {
                         match downloads_for_task.update_progress(
                             &task_id, 100.0, size, Some(size), 0, None, Some(filename), None, None, DownloadState::Downloading,
@@ -962,9 +962,9 @@ fn parse_progress(engine: &EngineType, line: &str) -> Option<(f64, u64, Option<u
 }
 
 fn parse_yt_dlp_progress(line: &str) -> Option<(f64, u64, Option<u64>, u64, Option<u64>, Option<String>, Option<usize>, Option<usize>, DownloadState)> {
-    if let Some(payload) = line.strip_prefix("download:") {
-        let fields: Vec<&str> = payload.split('|').collect();
-        if fields.len() < 9 { return None; }
+    let payload = line.strip_prefix("download:").unwrap_or(line);
+    let fields: Vec<&str> = payload.split('|').collect();
+    if fields.len() >= 9 && matches!(fields[0], "downloading" | "finished") {
         let downloaded = parse_optional_u64(fields[1]).unwrap_or(0);
         let total = parse_optional_u64(fields[2]).or_else(|| parse_optional_u64(fields[3])).filter(|bytes| *bytes > 0);
         let progress = total.map(|value| if value == 0 { 0.0 } else { downloaded as f64 * 100.0 / value as f64 }).unwrap_or(0.0);
@@ -973,7 +973,7 @@ fn parse_yt_dlp_progress(line: &str) -> Option<(f64, u64, Option<u64>, u64, Opti
         let playlist_total = fields[7].parse::<usize>().ok();
         let filename = Some(fields[8..].join("|")).filter(|value| !value.is_empty() && *value != "NA");
         let eta = parse_eta(fields[5]).filter(|seconds| *seconds > 0);
-        return Some((item_progress, downloaded, total, parse_rate(fields[4]), eta, filename, playlist_index, playlist_total, if fields[0] == "finished" { DownloadState::Completed } else { DownloadState::Downloading }));
+        return Some((item_progress, downloaded, total, parse_rate(fields[4]), eta, filename, playlist_index, playlist_total, DownloadState::Downloading));
     }
     parse_yt_dlp_text_progress(line)
 }
@@ -1021,6 +1021,22 @@ fn inspect_ytdlp_output_file(download_dir: &Path, reported_path: Option<&Path>) 
     if size == 0 { return Err("yt-dlp finished but the output file is empty".into()); }
     let filename = output_file.file_name().map(|name| name.to_string_lossy().into_owned()).filter(|name| !name.is_empty()).ok_or_else(|| "cannot determine the downloaded file name".to_string())?;
     Ok((filename, size))
+}
+
+async fn inspect_ytdlp_output_file_when_ready(download_dir: &Path, reported_path: Option<&Path>) -> Result<(String, u64), String> {
+    let Some(reported_path) = reported_path else {
+        return inspect_ytdlp_output_file(download_dir, None);
+    };
+    let mut retries_remaining = 20;
+    loop {
+        match inspect_ytdlp_output_file(download_dir, Some(reported_path)) {
+            Err(error) if error.contains("' is missing:") && retries_remaining > 0 => {
+                retries_remaining -= 1;
+                tokio::time::sleep(Duration::from_millis(250)).await;
+            }
+            result => return result,
+        }
+    }
 }
 
 
@@ -1401,6 +1417,24 @@ mod tests {
         assert_eq!(parsed.0, 0.0);
         assert_eq!(parsed.1, 0);
         assert_eq!(parsed.5.as_deref(), Some("video.mp4"));
+        assert_eq!(parsed.8, super::DownloadState::Downloading);
+    }
+
+    #[test]
+    fn parses_actual_yt_dlp_progress_template_output_without_the_type_prefix() {
+        let parsed = parse_yt_dlp_progress(r"downloading|1024|65536|NA|10902661.706488974|NA|NA|NA|C:\Downloads\video.mp4").unwrap();
+        assert_eq!(parsed.0, 100.0 * 1024.0 / 65536.0);
+        assert_eq!(parsed.1, 1024);
+        assert_eq!(parsed.2, Some(65536));
+        assert_eq!(parsed.3, 10_902_661);
+        assert_eq!(parsed.5.as_deref(), Some(r"C:\Downloads\video.mp4"));
+        assert_eq!(parsed.8, super::DownloadState::Downloading);
+    }
+
+    #[test]
+    fn yt_dlp_finished_progress_waits_for_process_and_file_validation() {
+        let parsed = parse_yt_dlp_progress("finished|65536|65536|NA|NA|NA|NA|NA|video.mp4").unwrap();
+        assert_eq!(parsed.0, 100.0);
         assert_eq!(parsed.8, super::DownloadState::Downloading);
     }
 
