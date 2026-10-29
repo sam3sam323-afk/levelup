@@ -1,5 +1,6 @@
 @import "tailwindcss";
 @import "tw-animate-css";
+@import url("https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800&display=swap");
 
 :root {
   color-scheme: dark;
@@ -27,7 +28,7 @@ html, body, #root { min-height: 100%; margin: 0; }
 body {
   background: var(--bg-deep);
   color: var(--text);
-  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family: "Cairo", Inter, "Segoe UI Variable", "Noto Sans Arabic", Tahoma, ui-sans-serif, system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
 }
 button, input, select { font: inherit; }
@@ -946,7 +947,7 @@ button:active, .app-button:active, .pair-button:active, .detail-actions button:a
 
 /* Readability pass: raise text contrast and legibility without enlarging the reference layout. */
 :root { --muted: #bbc8d1; --muted-2: #98a8b4; }
-body { font-family: Inter, "Segoe UI Variable", "Noto Sans Arabic", Tahoma, system-ui, -apple-system, sans-serif; }
+ body { font-family: "Cairo", Inter, "Segoe UI Variable", "Noto Sans Arabic", Tahoma, system-ui, sans-serif; }
 .window-brand-copy small { color: #a6b5bf; font-size: 10px; }
 .engine-indicator { color: #bdcbd4; font-size: 13px; }
 .header-segment button { font-size: 12px; }
@@ -984,3 +985,96 @@ body { font-family: Inter, "Segoe UI Variable", "Noto Sans Arabic", Tahoma, syst
 .nexus-app.light .downloads-file-name, .nexus-app.light .detail-name { color: #263b49; }
 .nexus-app.light .downloads-progress-cell strong, .nexus-app.light .downloads-speed-cell, .nexus-app.light .downloads-eta-cell, .nexus-app.light .downloads-size-cell, .nexus-app.light .downloads-engine-cell, .nexus-app.light .detail-meta-row { color: #435c6b; }
 @media (prefers-reduced-motion: reduce) { .download-summary-value { animation: none !important; } }
+
+
+/* Refined dark glass: preserve the compact reference layout while adding depth. */
+.nexus-app:not(.light) .window-bar,
+.nexus-app:not(.light) .sidebar,
+.nexus-app:not(.light) .right-rail,
+.nexus-app:not(.light) .download-summary,
+.nexus-app:not(.light) .stat-card,
+.nexus-app:not(.light) .download-heading-search,
+.nexus-app:not(.light) .downloads-filter-tabs button,
+.nexus-app:not(.light) .sort-field,
+.nexus-app:not(.light) .detail-url-row,
+.nexus-app:not(.light) .detail-selected-header .detail-file-icon,
+.nexus-app:not(.light) .add-card,
+.nexus-app:not(.light) .modal-card {
+  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
+}
+.nexus-app:not(.light) .window-bar {
+  background: rgba(8, 14, 20, .76);
+  border-bottom-color: rgba(145, 183, 204, .18);
+}
+.nexus-app:not(.light) .sidebar,
+.nexus-app:not(.light) .right-rail {
+  background: rgba(11, 21, 30, .78);
+  border-color: rgba(145, 183, 204, .17);
+}
+.nexus-app:not(.light) .download-summary {
+  background: rgba(20, 34, 46, .68);
+  border-color: rgba(145, 183, 204, .2);
+  box-shadow: inset 0 1px rgba(255, 255, 255, .035), 0 10px 28px rgba(0, 0, 0, .12);
+}
+.nexus-app:not(.light) .stat-card {
+  background: rgba(15, 27, 39, .68);
+  border-color: rgba(145, 183, 204, .19);
+}
+.nexus-app:not(.light) .download-heading-search,
+.nexus-app:not(.light) .detail-url-row,
+.nexus-app:not(.light) .sort-field {
+  background: rgba(18, 32, 44, .74);
+  border-color: rgba(145, 183, 204, .22);
+}
+.nexus-app:not(.light) .downloads-filter-tabs button:not(.active) {
+  background: rgba(20, 34, 46, .56);
+  border-color: rgba(145, 183, 204, .16);
+}
+.nexus-app:not(.light) .downloads-filter-tabs button:not(.active):hover {
+  background: rgba(25, 47, 62, .78);
+  border-color: rgba(50, 220, 255, .25);
+}
+.nexus-app:not(.light) .downloads-table-row.selected {
+  background: linear-gradient(105deg, rgba(21, 55, 75, .82), rgba(20, 40, 58, .72));
+  border-color: rgba(50, 190, 236, .32);
+  box-shadow: inset 0 0 0 1px rgba(50, 220, 255, .08), 0 5px 18px rgba(11, 155, 202, .08);
+  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
+}
+.nexus-app:not(.light) .downloads-table-row:hover {
+  background: rgba(27, 48, 62, .72);
+}
+.nexus-app:not(.light) .add-card,
+.nexus-app:not(.light) .modal-card {
+  background: rgba(16, 29, 41, .9);
+  border-color: rgba(145, 183, 204, .24);
+  box-shadow: 0 22px 65px rgba(0, 0, 0, .38), inset 0 1px rgba(255, 255, 255, .045);
+}
+.nexus-app:not(.light) .detail-selected-header .detail-file-icon {
+  background: rgba(23, 42, 56, .78);
+  border-color: rgba(145, 183, 204, .24);
+}
+.nexus-app:not(.light) .app-button--primary,
+.nexus-app:not(.light) .quick-add button {
+  box-shadow: 0 0 0 1px rgba(74, 190, 235, .2), 0 5px 18px rgba(21, 153, 218, .19);
+  transition: transform .2s ease, box-shadow .22s ease, filter .2s ease;
+}
+.nexus-app:not(.light) .app-button--primary:hover,
+.nexus-app:not(.light) .quick-add button:hover {
+  box-shadow: 0 0 0 1px rgba(74, 210, 255, .38), 0 0 22px rgba(21, 170, 235, .26), 0 8px 24px rgba(21, 153, 218, .2);
+  filter: brightness(1.04);
+}
+.nexus-app:not(.light) .engine-indicator.online .engine-indicator-dot {
+  animation: nexusOnlineGlow 2.6s ease-in-out infinite;
+}
+.nexus-app:not(.light) .engine-indicator.partial .engine-indicator-dot {
+  box-shadow: 0 0 7px rgba(245, 185, 66, .4), 0 0 15px rgba(245, 185, 66, .16);
+}
+@keyframes nexusOnlineGlow {
+  0%, 100% { box-shadow: 0 0 5px rgba(24, 200, 134, .38), 0 0 10px rgba(24, 200, 134, .12); }
+  50% { box-shadow: 0 0 9px rgba(24, 200, 134, .62), 0 0 18px rgba(24, 200, 134, .24); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .nexus-app:not(.light) .engine-indicator.online .engine-indicator-dot { animation: none; }
+}
